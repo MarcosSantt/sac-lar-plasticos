@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Identidade visual LAR PLÁSTICOS
+   Único lugar do projeto com códigos de cor. Referências:
+   - #309645 verde do logotipo ("LAR") · #818285 cinza do logotipo ("PLÁSTICOS")
+   - #06a91b verde de destaque do site · #3f403f texto do site · #ecb916 amarelo do site
+   ========================================================================== */
+:root {
+  /* Marca */
+  --brand-primary: #309645;
+  --brand-primary-dark: #267a38;
+  --brand-primary-darker: #1f5f2e;
+  --brand-deep: #184a26;          /* header */
+  --brand-primary-light: #e2f1e5;
+  --brand-primary-lighter: #f2f8f3;
+  --brand-secondary: #06a91b;     /* destaque pontual (indicadores) */
+  --brand-gray: #818285;
+
+  /* Escala verde */
+  --green-50: #f2f8f3;
+  --green-100: #e2f1e5;
+  --green-200: #c3e2ca;
+  --green-300: #93cb9f;
+  --green-400: #5fb070;
+  --green-500: #3a9e4f;
+  --green-600: #309645;
+  --green-700: #267a38;
+  --green-800: #1f5f2e;
+  --green-900: #184a26;
+
+  /* Neutros (cinza levemente esverdeado, derivado do cinza do logotipo) */
+  --background: #f4f6f4;
+  --surface: #ffffff;
+  --text-primary: #2f3331;
+  --text-secondary: #5c615e;
+  --border: #e1e5e2;
+  --gray-50: #f7f9f7;
+  --gray-100: #eef1ef;
+  --gray-200: #e1e5e2;
+  --gray-300: #cbd1cd;
+  --gray-400: #9aa19c;
+  --gray-500: #6f7672;
+  --gray-600: #545a56;
+  --gray-700: #3f4441;
+  --gray-800: #2f3331;
+  --gray-900: #1f2321;
+
+  /* Semânticas */
+  --success: #309645;
+  --warning: #ecb916;
+  --warning-50: #fdf8e4;
+  --warning-100: #faefc2;
+  --warning-600: #c99a07;
+  --warning-700: #9a7406;
+  --warning-800: #765805;
+  --orange: #e8750f;
+  --orange-50: #fdf1e6;
+  --orange-600: #cc6206;
+  --orange-700: #a84f05;
+  --danger: #c0392b;
+  --danger-50: #fcefed;
+  --danger-300: #eba49c;
+  --danger-400: #de7468;
+  --danger-600: #b03224;
+  --danger-700: #8f281d;
+  --info: #3f78b5;
+  --info-50: #eef4fa;
+  --info-100: #dce8f5;
+  --info-200: #bcd3ea;
+  --info-600: #33669c;
+  --info-700: #29527d;
+  --observer: #6a64a4;            /* observadores: tom discreto, distinto do verde */
+  --observer-50: #f2f1f8;
+  --observer-100: #e5e3f1;
+  --observer-600: #5a5494;
+  --observer-700: #4a4579;
+
+  /* Avatares */
+  --avatar-1: #309645;
+  --avatar-2: #1f5f2e;
+  --avatar-3: #4f7d63;
+  --avatar-4: #5a6b62;
+  --avatar-5: #3f78b5;
+  --avatar-6: #6a64a4;
+  --avatar-7: #8a7a3a;
+  --avatar-8: #2e7d7a;
+
+  --shadow-color: rgb(31 35 33 / 0.06);
+  --shadow-strong: rgb(24 74 38 / 0.18);
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-*: initial;
+  --color-white: var(--surface);
+  --color-black: var(--gray-900);
+  --color-canvas: var(--background);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-accent: var(--brand-secondary);
+  --color-brand-gray: var(--brand-gray);
+
+  --color-brand-50: var(--green-50);
+  --color-brand-100: var(--green-100);
+  --color-brand-200: var(--green-200);
+  --color-brand-300: var(--green-300);
+  --color-brand-400: var(--green-400);
+  --color-brand-500: var(--green-500);
+  --color-brand-600: var(--green-600);
+  --color-brand-700: var(--green-700);
+  --color-brand-800: var(--green-800);
+  --color-brand-900: var(--green-900);
+
+  --color-slate-50: var(--gray-50);
+  --color-slate-100: var(--gray-100);
+  --color-slate-200: var(--gray-200);
+  --color-slate-300: var(--gray-300);
+  --color-slate-400: var(--gray-400);
+  --color-slate-500: var(--gray-500);
+  --color-slate-600: var(--gray-600);
+  --color-slate-700: var(--gray-700);
+  --color-slate-800: var(--gray-800);
+  --color-slate-900: var(--gray-900);
+
+  --color-amber-50: var(--warning-50);
+  --color-amber-100: var(--warning-100);
+  --color-amber-500: var(--warning);
+  --color-amber-600: var(--warning-600);
+  --color-amber-700: var(--warning-700);
+  --color-amber-800: var(--warning-800);
+  --color-orange-50: var(--orange-50);
+  --color-orange-500: var(--orange);
+  --color-orange-600: var(--orange-600);
+  --color-orange-700: var(--orange-700);
+  --color-red-50: var(--danger-50);
+  --color-red-300: var(--danger-300);
+  --color-red-400: var(--danger-400);
+  --color-red-500: var(--danger);
+  --color-red-600: var(--danger-600);
+  --color-red-700: var(--danger-700);
+  --color-blue-50: var(--info-50);
+  --color-blue-100: var(--info-100);
+  --color-blue-200: var(--info-200);
+  --color-blue-500: var(--info);
+  --color-blue-600: var(--info-600);
+  --color-blue-700: var(--info-700);
+  --color-violet-50: var(--observer-50);
+  --color-violet-100: var(--observer-100);
+  --color-violet-500: var(--observer);
+  --color-violet-600: var(--observer-600);
+  --color-violet-700: var(--observer-700);
+  --color-avatar-1: var(--avatar-1);
+  --color-avatar-2: var(--avatar-2);
+  --color-avatar-3: var(--avatar-3);
+  --color-avatar-4: var(--avatar-4);
+  --color-avatar-5: var(--avatar-5);
+  --color-avatar-6: var(--avatar-6);
+  --color-avatar-7: var(--avatar-7);
+  --color-avatar-8: var(--avatar-8);
+}
+
+@theme {
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-pop-in: pop-in 0.2s ease-out;
+  --animate-slide-up: slide-up 0.28s ease-out;
+  --animate-slide-in-right: slide-in-right 0.25s ease-out;
+  --animate-toast-in: toast-in 0.25s ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-canvas text-slate-800 antialiased;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_var(--shadow-color)];
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:scale-[0.98];
+  }
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 border border-brand-600 bg-white text-brand-700 hover:border-brand-700 hover:bg-brand-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 bg-red-600 text-white hover:bg-red-700;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 transition focus:border-brand-600 focus:outline-none focus:ring-3 focus:ring-brand-600/15 disabled:bg-slate-50 disabled:text-slate-500;
+  }
+  .input-error {
+    @apply border-red-400 focus:border-red-500 focus:ring-red-500/15;
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-slate-700;
+  }
+  .th {
+    @apply px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .td {
+    @apply px-4 py-3 align-middle text-sm text-slate-700;
+  }
+}
