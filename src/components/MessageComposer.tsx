@@ -1,68 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
-import { Clock, Loader2, Lock, Paperclip, Send, Smile } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Loader2, Lock, Paperclip, Send, Smile } from 'lucide-react'
 import type { Protocol } from '../types'
-import { useProtocolAuthors } from '../hooks/useParticipants'
 import { useStore } from '../store/StoreContext'
 import { useFileAttachments } from '../hooks/useFileAttachments'
-import { isClosed } from '../utils/protocol'
+import { isClosed, roleInProtocol } from '../utils/protocol'
 import { AttachmentList } from './AttachmentList'
 import { Avatar } from './Avatar'
 import { useToast } from './Toast'
 
 const EMOJIS = ['🙂', '😊', '👍', '🙏', '👏', '✅', '📎', '📦', '🚚', '💳', '📄', '⏳', '⚠️', '❗', '🎉', '🤝', '😕', '😃']
 
-const SIMULATIONS = [
-  { value: 0, label: 'Agora' },
-  { value: 5, label: '+5 min' },
-  { value: 15, label: '+15 min' },
-  { value: 37, label: '+37 min' },
-  { value: 60, label: '+1h' },
-  { value: 138, label: '+2h 18min' },
-]
-
-const ROLE_LABEL = { requester: 'Solicitante', agent: 'Atendente SAC', observer: 'Observador' }
+const ROLE_LABEL = { requester: 'Solicitante', agent: 'Atendente SAC', observer: 'Observador', coordinator: 'Coordenador', post_sales: 'Pós-vendas' }
 
 export function MessageComposer({ protocol }: { protocol: Protocol }) {
   const { sendMessage, currentUser } = useStore()
   const toast = useToast()
-  const authors = useProtocolAuthors(protocol)
+  const role = roleInProtocol(protocol, currentUser)
 
-  const defaultAuthorId = () => {
-    if (currentUser.role === 'requester' && protocol.requester.email.toLowerCase() === currentUser.email.toLowerCase()) return 'requester'
-    return authors.find((a) => a.id === currentUser.id)?.id ?? authors[0].id
-  }
-
-  const [authorId, setAuthorId] = useState(defaultAuthorId)
   const [text, setText] = useState('')
   const [emojiOpen, setEmojiOpen] = useState(false)
-  const [simulate, setSimulate] = useState(0)
   const [sending, setSending] = useState(false)
-  const author = authors.find((a) => a.id === authorId) ?? authors[0]
-  const files = useFileAttachments(author.name)
+  const files = useFileAttachments(currentUser.name)
   const fileInput = useRef<HTMLInputElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
-
-  // Ao trocar o perfil no cabeçalho, o remetente acompanha.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => setAuthorId(defaultAuthorId()), [currentUser.id, protocol.id])
 
   const closed = isClosed(protocol.status)
   const canSend = (text.trim().length > 0 || files.attachments.length > 0) && !sending
 
-  const send = () => {
+  const send = async () => {
     if (!canSend) {
       if (!sending) toast({ variant: 'error', title: 'Mensagem vazia', description: 'Escreva uma mensagem ou anexe um arquivo para enviar.' })
       return
     }
     setSending(true)
-    window.setTimeout(() => {
-      sendMessage(protocol.id, author, text, files.attachments.map((a) => ({ ...a, uploadedBy: author.name })), simulate)
-      setText('')
-      files.clear()
-      setSimulate(0)
-      setSending(false)
-      textarea.current?.focus()
-    }, 450)
+    const sent = await sendMessage(protocol.id, text.trim(), files.files)
+    setSending(false)
+    // Em caso de falha o texto e os anexos ficam no lugar para uma nova tentativa.
+    if (!sent) return
+    setText('')
+    files.clear()
+    textarea.current?.focus()
   }
 
   const insertEmoji = (e: string) => {
@@ -84,18 +61,9 @@ export function MessageComposer({ protocol }: { protocol: Protocol }) {
 
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <span>Respondendo como</span>
-        <div className="relative flex items-center">
-          <span className="pointer-events-none absolute left-1.5"><Avatar name={author.name} size="xs" /></span>
-          <select
-            value={author.id}
-            onChange={(e) => setAuthorId(e.target.value)}
-            className="appearance-none rounded-full border border-slate-200 bg-slate-50 py-1 pr-7 pl-9 text-xs font-medium text-slate-700 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
-            aria-label="Enviar como"
-          >
-            {authors.map((a) => <option key={a.id} value={a.id}>{a.name} — {ROLE_LABEL[a.role]}</option>)}
-          </select>
-          <span className="pointer-events-none absolute right-2.5 text-slate-400">▾</span>
-        </div>
+        <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1 pr-3 pl-1.5 font-medium text-slate-700">
+          <Avatar name={currentUser.name} size="xs" />{currentUser.name} — {ROLE_LABEL[role]}
+        </span>
       </div>
 
       <div className="rounded-xl border border-slate-300 bg-white transition focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-500/15">
@@ -129,14 +97,6 @@ export function MessageComposer({ protocol }: { protocol: Protocol }) {
               </div>
             )}
           </div>
-
-          <label className="ml-1 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-slate-500" title="Recurso da demonstração: registra a mensagem como se tivesse sido enviada depois de um intervalo, para mostrar o cálculo do tempo de resposta.">
-            <Clock className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Simular horário:</span>
-            <select value={simulate} onChange={(e) => setSimulate(Number(e.target.value))} className="rounded border-0 bg-transparent py-0 text-xs font-medium text-slate-700 focus:ring-0 focus:outline-none">
-              {SIMULATIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </label>
 
           <span className="ml-auto hidden text-[11px] text-slate-400 lg:inline">Ctrl + Enter para enviar</span>
           <button type="button" onClick={send} disabled={sending} className="btn-primary ml-2 px-4">

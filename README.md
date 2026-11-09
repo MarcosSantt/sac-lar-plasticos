@@ -1,81 +1,141 @@
-# SAC Lar Plásticos — Demo funcional
+# Portal de SAC — Lar Plásticos
 
-Sistema de gestão de SAC (abertura e acompanhamento de protocolos) para demonstração a clientes.
-Frontend puro com persistência em `localStorage` (sem backend).
+Portal interno para abertura e acompanhamento de protocolos de SAC: login por e-mail e senha,
+conversa com anexos, observadores, indicadores de tempo de atendimento e área administrativa.
 
-**Stack:** React 19 · TypeScript · Vite · Tailwind CSS 4 · React Router · Lucide React
+**Stack:** React 19 · TypeScript · Vite · Tailwind CSS 4 (site) · Node 22 · Fastify · PostgreSQL 16 (API) · Docker
 
-## Executar
+## Como está organizado
+
+```
+src/                 Site (React)
+  api/               Cliente HTTP da API
+  store/             StoreContext: sessão, dados do portal e ações (todas passam pela API)
+  pages/             Login, troca de senha, Início, Abrir SAC, Meus/Todos os Protocolos, Protocolo, FAQ, admin/*
+  components/ hooks/ layouts/ utils/ types/
+server/              API
+  migrations/        Esquema do banco em SQL, aplicado automaticamente na inicialização
+  src/
+    auth.ts          Senhas (scrypt), sessões por cookie e controle de acesso
+    protocols.ts     Regras de negócio dos protocolos
+    uploads.ts       Recebimento e validação de anexos
+    routes/          auth · protocols · admin
+  test/              Testes de ponta a ponta da API
+Dockerfile           Imagem única: a API também serve o site compilado
+docker-compose.yml   Produção (banco + portal)
+docker-compose.dev.yml   Banco para desenvolvimento
+```
+
+## Perfis e permissões
+
+Os protocolos são organizados por **equipe** (carteira comercial, cadastrada em Administração › Equipes).
+Cada protocolo fica na equipe de quem o abriu; o pós-vendas escolhe a equipe na abertura.
+
+| Perfil | Abre SAC | Protocolos que vê | Dashboard |
+|---|---|---|---|
+| **Vendedor** (uma equipe) | Sim | Os que abriu | Não |
+| **Pós-vendas** (uma ou mais equipes) | Sim | Os que abriu e os das suas equipes | Sim |
+| **Coordenador** (uma ou mais equipes) | Não | Os das equipes que coordena | Sim |
+| **Equipe SAC** (inclui a coordenação de SAC) | Não | Todos | Sim |
+| **Observador** | Não | Apenas aqueles em que foi incluído | Não |
+| **Administrador** | Marcação adicional da equipe SAC: gerencia categorias, equipes, observadores, usuários e configurações. | | |
+
+Todos respondem nos protocolos que veem; status e responsável só são alterados pela equipe SAC. O
+dashboard mostra apenas os números dos protocolos que a pessoa pode ver.
+
+As permissões são validadas no servidor: quem não tem acesso a um protocolo não consegue lê-lo,
+responder nem baixar seus anexos, mesmo chamando a API diretamente.
+
+Não há autocadastro. O administrador cria as contas e o portal gera uma **senha provisória**, exibida
+uma única vez; no primeiro acesso a pessoa é obrigada a definir a própria senha. Quem esquecer a senha
+pede a um administrador para usar **Redefinir senha**.
+
+## Regras de negócio
+
+- Número de protocolo sequencial `SAC-AAAA-NNNNN` (prefixo e sequência configuráveis), gerado no
+  servidor sem repetição mesmo com aberturas simultâneas.
+- Distribuição automática para o atendente ativo com menos protocolos em aberto (pode ser desligada).
+- Tempo de resposta de cada mensagem = intervalo desde a mensagem anterior.
+- Indicadores: tempo total, primeira resposta (com meta de SLA) e tempo médio de resposta do SAC.
+- Transições automáticas: resposta do SAC em "Novo" → "Em atendimento"; resposta do solicitante em
+  "Aguardando cliente" → "Em atendimento".
+- Alteração manual de status e de responsável somente pela equipe SAC, sempre registrada no histórico.
+- Notificações no portal: nova resposta, mudança de status, protocolo atribuído e inclusão como observador.
+- Anexos de até 10 MB (10 por envio); executáveis, scripts e HTML são recusados.
+- Cada SAC tem cliente, nota fiscal, pedido e **itens** (produto do catálogo + quantidade). A equipe SAC
+  classifica cada item (modo de falha, área responsável/centro de resultado, local, maquinário, tratativa,
+  concessão comercial e custos); cada item tem a própria tratativa.
+- Dashboard (aba Monitoramento) no formato do painel FR-134: cada item é uma ocorrência; Top 5 por setor,
+  modo de falha, família, produto e cliente, custos por área e modo, e Objetivos e Metas (limites de SAC e
+  de falta de componente, PPM pela produção mensal). Listas, produtos, metas e produção são mantidos em
+  Administração; os valores iniciais vieram da planilha FR-134 (migrações 004 e 005).
+
+## Instalação no servidor (produção)
+
+Requisitos: Docker com o plugin Compose.
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173
-npm run build      # build de produção em dist/
-npm run preview    # serve o build
+cp .env.example .env      # preencha DB_PASSWORD, ADMIN_EMAIL e ADMIN_PASSWORD
+docker compose up -d --build
 ```
 
-Para voltar aos dados originais: **Administração › Configurações › Restaurar dados de exemplo**.
+O portal fica em `http://SERVIDOR:8080` (porta ajustável em `APP_PORT`). Entre com `ADMIN_EMAIL` e
+`ADMIN_PASSWORD`; a troca de senha é exigida no primeiro acesso. Depois, em **Administração**,
+cadastre as equipes, a equipe SAC, os vendedores, coordenadores, pós-vendas e observadores.
 
-## Estrutura
+Para atualizar: `git pull && docker compose up -d --build`. As migrações do banco rodam sozinhas.
+
+### HTTPS
+
+Coloque o portal atrás do proxy reverso da empresa (Nginx, Caddy, Traefik, IIS…) com certificado, e
+defina no `.env`:
 
 ```
-src/
-  components/  Header, NotificationCenter, Toast, Modal, Sidebar, DashboardCard, ProtocolTable,
-               ProtocolCard, StatusBadge, PriorityBadge, StatusSelect, ProtocolTimeline, MessageBubble,
-               MessageComposer, AttachmentList, FileDropzone, ParticipantList, ParticipantSelector,
-               ProtocolDetails, ProtocolHistory, CategoryManager, ObserverManager...
-  pages/       Dashboard, NewProtocol, MyProtocols, AllProtocols, Protocol, Faq, admin/*
-  layouts/     MainLayout, AdminLayout
-  store/       StoreContext (estado global, regras de negócio e persistência)
-  hooks/       useMyProtocols, useProtocolFilters, useFileAttachments, useParticipants
-  data/        seed (protocolos, categorias, observadores, usuários), faq
-  types/       modelos (Protocol, Message, Observer, Category...)
-  utils/       formatação de datas/durações, metadados de status/prioridade, métricas de SLA
+COOKIE_SECURE=true
+TRUST_PROXY=true
 ```
 
-## Regras implementadas
+Sem HTTPS, as senhas trafegam em texto puro pela rede — use só em rede interna confiável e como etapa provisória.
 
-- Número de protocolo sequencial `SAC-AAAA-NNNNN` (prefixo e sequência configuráveis).
-- Distribuição automática para o atendente ativo com menor fila.
-- Tempo de resposta de cada mensagem = diferença para a mensagem anterior.
-- Painel: tempo total, primeira resposta (com meta de SLA) e tempo médio de resposta do SAC.
-- Transições automáticas: resposta do SAC em "Novo" → "Em atendimento"; resposta do cliente em
-  "Aguardando cliente" → "Em atendimento".
-- Alteração manual de status somente pela equipe SAC, sempre registrada no histórico.
-- Notificações quando outra pessoa responde um protocolo.
+### Backup
 
-## Roteiro da demonstração
+Os dados ficam em dois volumes Docker: `sac_db` (banco) e `sac_uploads` (anexos). Faça cópia dos dois:
 
-1. Início: indicadores e "Meus últimos protocolos" (usuário Marcos Souza, solicitante).
-2. **Abrir SAC**: clique em "ABRIR PROTOCOLO" vazio para mostrar a validação amigável.
-3. Preencha os dados, escolha categoria e prioridade, marque observadores (ex.: Maria Silva e João Santos) e anexe um arquivo.
-4. **ABRIR PROTOCOLO** → modal com o número gerado → **Visualizar protocolo**.
-5. No compositor, em **Respondendo como**, escolha *Ana Paula Ribeiro — Atendente SAC*.
-   Em **Simular horário** escolha *+15 min* e envie: aparece "⏱ Tempo de resposta: 15 min",
-   o status muda para "Em atendimento" e chega uma notificação.
-6. Responda como *João Santos — Observador* (ex.: *+37 min*) com um anexo: o observador participa da conversa.
-7. Mostre o painel direito: métricas, participantes, anexos. Use **+ Adicionar observador**.
-8. Status: como solicitante o seletor fica bloqueado. No menu do usuário (canto superior direito),
-   **Alternar perfil** → Ana Paula Ribeiro, e altere o status para "Aguardando cliente".
-9. Abas **Histórico**, **Participantes**, **Anexos** e **Detalhes**.
-10. **Administração › Categorias** → **+ Nova categoria** (ex.: "Garantia").
-11. Volte a **Abrir SAC**: a nova categoria já está no select.
+```bash
+docker compose exec -T db pg_dump -U sac sac | gzip > sac-$(date +%F).sql.gz
+docker run --rm -v sac-demo_sac_uploads:/data -v "$PWD":/backup alpine tar czf /backup/anexos-$(date +%F).tar.gz -C /data .
+```
 
-> "Simular horário" é um recurso de demonstração que registra a mensagem como se tivesse sido
-> enviada depois de um intervalo, para evidenciar o cálculo de tempos ao vivo.
+(O prefixo do volume é o nome da pasta do projeto; confira com `docker volume ls`.)
 
-## Identidade visual (Lar Plásticos)
+## Desenvolvimento
+
+```bash
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL em 127.0.0.1:5433
+cp server/.env.example server/.env               # administrador inicial e conexão com o banco
+npm install && npm --prefix server install
+
+npm run dev:api    # API em http://localhost:3001
+npm run dev        # site em http://localhost:5173 (encaminha /api para a API)
+```
+
+Verificações:
+
+```bash
+npm run build      # checagem de tipos + build do site
+npm run lint
+npm run test:api   # testes de ponta a ponta da API (usa um banco temporário no PostgreSQL de desenvolvimento)
+```
+
+## Identidade visual
 
 Todas as cores ficam em variáveis CSS no topo de `src/index.css` (`:root`) — é o único lugar com
 códigos HEX. O `@theme` do Tailwind aponta para essas variáveis e desativa a paleta padrão.
-Logo oficial em `public/logo-lar.png`; favicon é o símbolo de reciclagem recortado do mesmo arquivo.
+Logo oficial em `public/logo-lar.png`.
 
-## Publicação (GitHub Pages)
+## Limites conhecidos desta versão
 
-Online em: https://marcossantt.github.io/sac-lar-plasticos/
-
-Para publicar uma nova versão depois de alterar o código:
-
-```bash
-npm run deploy   # gera o build e envia a pasta dist/ para a branch gh-pages
-```
+- O site carrega de uma vez todos os protocolos que o usuário pode ver e atualiza a cada 20 segundos.
+  Funciona bem até alguns milhares de protocolos; acima disso, a listagem deve passar a ser paginada no servidor.
+- Notificações apenas dentro do portal (sem e-mail).
+- Sem recuperação de senha por e-mail: a redefinição é feita por um administrador.

@@ -19,7 +19,7 @@ export function MainLayout() {
             <span className="text-slate-300">|</span>
             <span>SAC · Central de Atendimento</span>
           </span>
-          <span className="text-slate-400">Ambiente de demonstração · dados armazenados localmente no navegador</span>
+          <span className="text-slate-400">Uso interno · © {new Date().getFullYear()} Lar Plásticos</span>
         </div>
       </footer>
     </div>

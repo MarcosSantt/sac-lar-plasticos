@@ -1,0 +1,41 @@
+# Produção: banco de dados + portal. Configure o arquivo .env antes (veja .env.example).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sac
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no arquivo .env}
+      POSTGRES_DB: sac
+      TZ: America/Sao_Paulo
+    volumes:
+      - sac_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sac -d sac"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://sac:${DB_PASSWORD}@db:5432/sac
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Defina ADMIN_EMAIL no arquivo .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Defina ADMIN_PASSWORD no arquivo .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      MAX_FILE_MB: ${MAX_FILE_MB:-10}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - sac_uploads:/data/uploads
+
+volumes:
+  sac_db:
+  sac_uploads:

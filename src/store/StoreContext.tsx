@@ -1,64 +1,42 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
-  Attachment, Author, Category, HistoryEvent, HistoryKind, Notification, Observer, Persona, Priority,
-  Protocol, ProtocolStatus, RequestType, Requester, Settings, User,
+  AccountRole, Category, ItemCosts, Lookup, MonthProduction, Notification, Observer, Persona, Priority, Product, Protocol,
+  ProtocolStatus, RequestType, Requester, SaleType, Settings, Team, User, YearGoals,
 } from '../types'
-import {
-  buildSeedNotifications, buildSeedProtocols, seedCategories, seedObservers, seedSettings, seedUsers,
-} from '../data/seed'
-import { uid } from '../utils/format'
-import { OPEN_STATUSES, STATUS_META } from '../utils/protocol'
+import { ACCOUNT_ROLE_LABEL } from '../utils/access'
+import { ApiError, api, setUnauthenticatedHandler } from '../api/client'
 import { useToast } from '../components/Toast'
+import { LoginPage } from '../pages/LoginPage'
+import { ChangePasswordPage } from '../pages/ChangePasswordPage'
+import { SplashScreen } from '../components/SplashScreen'
 
-const STORAGE_KEY = 'larplasticos-sac:v2'
+/** Intervalo de atualização automática dos dados enquanto a aba está visível. */
+const REFRESH_MS = 20_000
 
-interface State {
+interface Me {
+  id: string
+  name: string
+  email: string
+  phone: string
+  department: string
+  title: string
+  role: AccountRole
+  isAdmin: boolean
+  mustChangePassword: boolean
+  teamIds: string[]
+}
+
+interface Data {
   protocols: Protocol[]
   categories: Category[]
+  teams: Team[]
+  lookups: Lookup[]
+  goals: YearGoals[]
+  production: MonthProduction[]
   observers: Observer[]
   users: User[]
   notifications: Notification[]
   settings: Settings
-  currentUserId: string
-}
-
-function createInitialState(): State {
-  const protocols = buildSeedProtocols()
-  return {
-    protocols,
-    categories: seedCategories,
-    observers: seedObservers,
-    users: seedUsers,
-    notifications: buildSeedNotifications(protocols),
-    settings: seedSettings,
-    currentUserId: 'u_marcos',
-  }
-}
-
-function loadState(): State {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...createInitialState(), ...JSON.parse(raw) }
-  } catch { /* dados corrompidos: recria a base da demo */ }
-  return createInitialState()
-}
-
-function persist(state: State) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // Quota excedida: remove as pré-visualizações de imagens e tenta novamente.
-    const strip = (a: Attachment) => ({ ...a, dataUrl: undefined })
-    const light: State = {
-      ...state,
-      protocols: state.protocols.map((p) => ({
-        ...p,
-        attachments: p.attachments.map(strip),
-        messages: p.messages.map((m) => ({ ...m, attachments: m.attachments.map(strip) })),
-      })),
-    }
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(light)) } catch { /* sem armazenamento disponível */ }
-  }
 }
 
 export interface NewProtocolInput {
@@ -70,253 +48,272 @@ export interface NewProtocolInput {
   location: string
   description: string
   observerIds: string[]
-  attachments: Attachment[]
+  /** Equipe escolhida pelo pós-vendas; o vendedor usa sempre a própria. */
+  teamId?: string
+  customerName: string
+  invoiceNumber: string
+  invoiceDate: string | null
+  orderNumber: string
+  saleType: SaleType
+  items: { productCode: string; quantity: number; description: string }[]
 }
 
-interface StoreValue extends State {
+/** Dados comerciais e de logística editados pela equipe SAC. */
+export interface DetailsInput {
+  customerName: string
+  invoiceNumber: string
+  invoiceDate: string | null
+  orderNumber: string
+  saleType: SaleType
+  unit: string
+  returnMethod: string
+  returnInvoice: string
+}
+
+export interface ItemInput {
+  productCode: string
+  quantity: number
+  description: string
+  location: string
+  failureMode: string
+  responsibleArea: string
+  machinery: string
+  treatment: string
+  commercialConcession: boolean
+  costs: ItemCosts
+}
+
+export interface GoalsInput extends Omit<YearGoals, 'year'> {
+  /** kg de cada mês; nulo = não lançado. */
+  production: (number | null)[]
+}
+
+/** Dados de cadastro de uma conta (inclusive observadores). */
+export interface AccountInput {
+  id: string
+  name: string
+  email: string
+  phone?: string
+  department: string
+  title?: string
+  role: AccountRole
+  isAdmin?: boolean
+  active: boolean
+  teamIds?: string[]
+}
+
+/** Resultado de um cadastro: a senha provisória só existe quando a conta acabou de ser criada. */
+export interface AccountResult { temporaryPassword?: string }
+
+interface StoreValue extends Data {
   currentUser: Persona
-  personas: Persona[]
-  setCurrentUser: (id: string) => void
   getCategoryName: (id: string) => string
   getUser: (id: string | null) => User | undefined
   getObserver: (id: string) => Observer | undefined
-  createProtocol: (input: NewProtocolInput) => Protocol
-  sendMessage: (protocolId: string, author: Author, content: string, attachments: Attachment[], simulateMinutes?: number) => void
-  changeStatus: (protocolId: string, status: ProtocolStatus) => void
-  assignResponsible: (protocolId: string, userId: string) => void
-  addObservers: (protocolId: string, ids: string[]) => void
-  removeObserver: (protocolId: string, id: string) => void
-  addAttachments: (protocolId: string, attachments: Attachment[]) => void
-  saveCategory: (c: Category) => void
-  saveObserver: (o: Observer) => void
-  saveUser: (u: User) => void
-  updateSettings: (s: Partial<Settings>) => void
+  createProtocol: (input: NewProtocolInput, files: File[]) => Promise<Protocol | null>
+  sendMessage: (protocolId: string, content: string, files: File[]) => Promise<boolean>
+  changeStatus: (protocolId: string, status: ProtocolStatus) => Promise<boolean>
+  assignResponsible: (protocolId: string, userId: string) => Promise<boolean>
+  addObservers: (protocolId: string, ids: string[]) => Promise<boolean>
+  removeObserver: (protocolId: string, id: string) => Promise<boolean>
+  addAttachments: (protocolId: string, files: File[]) => Promise<boolean>
+  saveCategory: (c: Category) => Promise<boolean>
+  saveTeam: (t: Team) => Promise<boolean>
+  updateDetails: (protocolId: string, d: DetailsInput) => Promise<boolean>
+  saveItem: (protocolId: string, itemId: string | null, item: ItemInput) => Promise<boolean>
+  removeItem: (protocolId: string, itemId: string) => Promise<boolean>
+  searchProducts: (q: string) => Promise<Product[]>
+  saveLookup: (l: Lookup) => Promise<boolean>
+  saveProduct: (p: Product, isNew: boolean) => Promise<boolean>
+  saveGoals: (year: number, g: GoalsInput) => Promise<boolean>
+  saveAccount: (a: AccountInput) => Promise<AccountResult | null>
+  resetPassword: (userId: string) => Promise<string | null>
+  updateSettings: (s: Settings) => Promise<boolean>
   markNotificationRead: (id: string) => void
   markAllNotificationsRead: () => void
-  resetDemo: () => void
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>
+  logout: () => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
 
-const event = (kind: HistoryKind, description: string, actor: string, createdAt: string): HistoryEvent => ({
-  id: uid('h'), kind, description, actor, createdAt,
-})
+function filesForm(files: File[], fields: Record<string, string> = {}) {
+  const form = new FormData()
+  // Os campos vão antes dos arquivos para o servidor validá-los primeiro.
+  Object.entries(fields).forEach(([k, v]) => form.set(k, v))
+  files.forEach((f) => form.append('files', f, f.name))
+  return form
+}
 
-const ROLE_LABEL = { requester: 'Solicitante', agent: 'Atendente', observer: 'Observador' }
+type Session = { phase: 'loading' } | { phase: 'anonymous' } | { phase: 'signed'; me: Me }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>(loadState)
+  const [session, setSession] = useState<Session>({ phase: 'loading' })
+  const [data, setData] = useState<Data | null>(null)
   const toast = useToast()
+  // Incrementado a cada alteração local: uma atualização automática iniciada antes dela é descartada.
+  const revision = useRef(0)
+  const knownNotifications = useRef<Set<string> | null>(null)
 
-  useEffect(() => { persist(state) }, [state])
-
-  const personas = useMemo<Persona[]>(() => [
-    ...state.users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, subtitle: u.title })),
-    ...state.observers.filter((o) => o.active).map((o) => ({ id: o.id, name: o.name, email: o.email, role: 'observer' as const, subtitle: `Observador · ${o.department}` })),
-  ], [state.users, state.observers])
-
-  const currentUser = useMemo<Persona>(
-    () => personas.find((p) => p.id === state.currentUserId) ?? personas[0],
-    [personas, state.currentUserId],
-  )
-
-  const updateProtocol = useCallback((id: string, fn: (p: Protocol) => Protocol) => {
-    setState((s) => ({ ...s, protocols: s.protocols.map((p) => (p.id === id ? fn(p) : p)) }))
+  const signOut = useCallback(() => {
+    setSession({ phase: 'anonymous' })
+    setData(null)
+    knownNotifications.current = null
   }, [])
 
-  const notify = useCallback((n: Omit<Notification, 'id' | 'read' | 'createdAt'>, createdAt = new Date().toISOString()) => {
-    setState((s) => ({ ...s, notifications: [{ ...n, id: uid('n'), read: false, createdAt }, ...s.notifications].slice(0, 40) }))
-    toast({ variant: 'notification', title: n.title, description: n.body })
+  const fail = useCallback((err: unknown, title = 'Não foi possível concluir') => {
+    // Sessão expirada: a tela de login já explica o que houve.
+    if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') return
+    toast({ variant: 'error', title, description: err instanceof Error ? err.message : undefined })
   }, [toast])
 
-  const createProtocol = useCallback((input: NewProtocolInput): Protocol => {
-    const now = new Date().toISOString()
-    const year = new Date().getFullYear()
-    const { settings, users, protocols, observers } = state
-    const number = `${settings.protocolPrefix}-${year}-${String(settings.nextSequence).padStart(5, '0')}`
+  const refresh = useCallback(async () => {
+    const started = revision.current
+    const fresh = await api.get<Data>('/bootstrap')
+    if (started !== revision.current) return
+    setData(fresh)
 
-    // Distribuição automática: atendente ativo com menos protocolos em aberto.
-    const agents = users.filter((u) => u.role === 'agent' && u.active)
-    const load = (id: string) => protocols.filter((p) => p.responsibleId === id && OPEN_STATUSES.includes(p.status)).length
-    const responsible = settings.autoAssign && agents.length
-      ? [...agents].sort((a, b) => load(a.id) - load(b.id))[0]
-      : null
+    const known = knownNotifications.current
+    knownNotifications.current = new Set(fresh.notifications.map((n) => n.id))
+    if (!known) return
+    fresh.notifications.filter((n) => !n.read && !known.has(n.id)).slice(0, 3)
+      .forEach((n) => toast({ variant: 'notification', title: n.title, description: n.body }))
+  }, [toast])
 
-    const history: HistoryEvent[] = [event('created', 'Protocolo criado', input.requester.name, now)]
-    if (responsible) history.push(event('assigned', `Atribuído automaticamente a ${responsible.name}`, 'Sistema', now))
-    input.observerIds.forEach((id) => {
-      const o = observers.find((x) => x.id === id)
-      if (o) history.push(event('observer_added', `Observador ${o.name} adicionado`, input.requester.name, now))
-    })
-    if (input.attachments.length) {
-      history.push(event('attachment', `${input.attachments.length} anexo(s) adicionado(s): ${input.attachments.map((a) => a.name).join(', ')}`, input.requester.name, now))
+  // Sessão inicial: reaproveita o login se o cookie ainda for válido.
+  useEffect(() => {
+    setUnauthenticatedHandler(signOut)
+    api.get<{ user: Me }>('/auth/me')
+      .then(({ user }) => setSession({ phase: 'signed', me: user }))
+      .catch(() => setSession({ phase: 'anonymous' }))
+  }, [signOut])
+
+  const ready = session.phase === 'signed' && !session.me.mustChangePassword
+  const [loadError, setLoadError] = useState(false)
+
+  useEffect(() => {
+    if (!ready) return
+    let cancelled = false
+    const load = () => refresh().then(() => setLoadError(false)).catch(() => { if (!cancelled) setLoadError(true) })
+    load()
+    const tick = () => { if (document.visibilityState === 'visible') load() }
+    const timer = window.setInterval(tick, REFRESH_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
     }
+  }, [ready, refresh])
 
-    const protocol: Protocol = {
-      id: uid('p'),
-      protocolNumber: number,
-      title: input.title.trim(),
-      description: input.description.trim(),
-      type: input.type,
-      categoryId: input.categoryId,
-      priority: input.priority,
-      status: 'novo',
-      location: input.location.trim(),
-      requester: input.requester,
-      responsibleId: responsible?.id ?? null,
-      observerIds: input.observerIds,
-      attachments: input.attachments,
-      messages: [{
-        id: uid('m'),
-        author: { id: 'requester', name: input.requester.name, role: 'requester' },
-        content: input.description.trim(),
-        attachments: input.attachments,
-        createdAt: now,
-        responseTime: null,
-      }],
-      history,
-      createdAt: now,
-      updatedAt: now,
-      closedAt: null,
+  const login = useCallback(async (email: string, password: string) => {
+    const { user } = await api.post<{ user: Me }>('/auth/login', { email, password })
+    setSession({ phase: 'signed', me: user })
+  }, [])
+
+  const logout = useCallback(async () => {
+    await api.post('/auth/logout').catch(() => {})
+    signOut()
+  }, [signOut])
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    try {
+      const { user } = await api.post<{ user: Me }>('/auth/change-password', { currentPassword, newPassword })
+      setSession({ phase: 'signed', me: user })
+      return true
+    } catch (err) {
+      fail(err, 'Senha não alterada')
+      return false
     }
+  }, [fail])
 
-    setState((s) => ({
-      ...s,
-      protocols: [protocol, ...s.protocols],
-      settings: { ...s.settings, nextSequence: s.settings.nextSequence + 1 },
-    }))
-    return protocol
-  }, [state])
-
-  const sendMessage = useCallback<StoreValue['sendMessage']>((protocolId, author, content, attachments, simulateMinutes = 0) => {
-    const p = state.protocols.find((x) => x.id === protocolId)
-    if (!p) return
-    const last = p.messages[p.messages.length - 1]
-    const lastTime = new Date(last?.createdAt ?? p.createdAt).getTime()
-    const time = simulateMinutes > 0 ? lastTime + simulateMinutes * 60000 : Math.max(Date.now(), lastTime)
-    const createdAt = new Date(time).toISOString()
-    const responseTime = (time - lastTime) / 60000
-
-    const history: HistoryEvent[] = []
-    if (content.trim()) {
-      history.push(event('message', `${ROLE_LABEL[author.role]} ${author.name} enviou mensagem`, author.name, createdAt))
-    }
-    if (attachments.length) {
-      history.push(event('attachment', `${attachments.length} anexo(s) adicionado(s): ${attachments.map((a) => a.name).join(', ')}`, author.name, createdAt))
-    }
-
-    // Transições automáticas de status, como em uma ferramenta de SAC real.
-    let status = p.status
-    if (author.role === 'agent' && p.status === 'novo') status = 'em_atendimento'
-    if (author.role === 'requester' && p.status === 'aguardando_cliente') status = 'em_atendimento'
-    if (status !== p.status) {
-      history.push(event('status', `Status alterado automaticamente de ${STATUS_META[p.status].label} para ${STATUS_META[status].label}`, 'Sistema', createdAt))
-    }
-
-    updateProtocol(protocolId, (cur) => ({
-      ...cur,
-      status,
-      messages: [...cur.messages, { id: uid('m'), author, content: content.trim(), attachments, createdAt, responseTime }],
-      attachments: [...cur.attachments, ...attachments],
-      history: [...cur.history, ...history],
-      updatedAt: createdAt,
-    }))
-
-    if (author.id !== state.currentUserId) {
-      notify({
-        title: `Novo comentário no protocolo ${p.protocolNumber}`,
-        body: `${author.name} respondeu ao protocolo.`,
-        protocolNumber: p.protocolNumber,
-      }, createdAt)
-    }
-  }, [state.protocols, state.currentUserId, updateProtocol, notify])
-
-  const actorName = () => personas.find((x) => x.id === state.currentUserId)?.name ?? 'Usuário'
-
-  const changeStatus = (protocolId: string, status: ProtocolStatus) => {
-    updateProtocol(protocolId, (p) => {
-      if (p.status === status) return p
-      const closing = status === 'resolvido' || status === 'fechado'
-      const updatedAt = new Date(Math.max(Date.now(), new Date(p.updatedAt).getTime())).toISOString()
-      return {
-        ...p,
-        status,
-        closedAt: closing ? (p.closedAt ?? updatedAt) : null,
-        updatedAt,
-        history: [...p.history, event('status', `Status alterado de ${STATUS_META[p.status].label} para ${STATUS_META[status].label}`, actorName(), updatedAt)],
-      }
-    })
-  }
-
-  const assignResponsible = (protocolId: string, userId: string) => {
-    const u = state.users.find((x) => x.id === userId)
-    if (!u) return
-    const now = new Date().toISOString()
-    updateProtocol(protocolId, (p) => ({
-      ...p,
-      responsibleId: userId,
-      updatedAt: now > p.updatedAt ? now : p.updatedAt,
-      history: [...p.history, event('assigned', `Responsável alterado para ${u.name}`, actorName(), now)],
-    }))
-  }
-
-  const addObservers = (protocolId: string, ids: string[]) => {
-    const now = new Date().toISOString()
-    updateProtocol(protocolId, (p) => {
-      const newIds = ids.filter((id) => !p.observerIds.includes(id))
-      const events = newIds.map((id) => {
-        const o = state.observers.find((x) => x.id === id)
-        return event('observer_added', `Observador ${o?.name ?? ''} adicionado`, actorName(), now)
+  /** Envia uma alteração de protocolo e aplica o resultado na tela. */
+  const mutateProtocol = useCallback(async (send: () => Promise<{ protocol: Protocol | null }>, removedId?: string): Promise<Protocol | null | false> => {
+    try {
+      const { protocol } = await send()
+      revision.current++
+      setData((d) => {
+        if (!d) return d
+        if (!protocol) return { ...d, protocols: d.protocols.filter((p) => p.id !== removedId) }
+        const exists = d.protocols.some((p) => p.id === protocol.id)
+        return { ...d, protocols: exists ? d.protocols.map((p) => (p.id === protocol.id ? protocol : p)) : [protocol, ...d.protocols] }
       })
-      return { ...p, observerIds: [...p.observerIds, ...newIds], history: [...p.history, ...events], updatedAt: now > p.updatedAt ? now : p.updatedAt }
-    })
-  }
+      return protocol
+    } catch (err) {
+      fail(err)
+      return false
+    }
+  }, [fail])
 
-  const removeObserver = (protocolId: string, id: string) => {
-    const o = state.observers.find((x) => x.id === id)
-    const now = new Date().toISOString()
-    updateProtocol(protocolId, (p) => ({
-      ...p,
-      observerIds: p.observerIds.filter((x) => x !== id),
-      history: [...p.history, event('observer_removed', `Observador ${o?.name ?? ''} removido`, actorName(), now)],
-    }))
-  }
+  /** Envia uma alteração administrativa e recarrega os cadastros. */
+  const mutateAdmin = useCallback(async <T,>(send: () => Promise<T>): Promise<T | null> => {
+    try {
+      const result = await send()
+      revision.current++
+      await refresh().catch(() => {})
+      return result
+    } catch (err) {
+      fail(err)
+      return null
+    }
+  }, [fail, refresh])
 
-  const addAttachments = (protocolId: string, attachments: Attachment[]) => {
-    const now = new Date().toISOString()
-    updateProtocol(protocolId, (p) => ({
-      ...p,
-      attachments: [...p.attachments, ...attachments],
-      updatedAt: now > p.updatedAt ? now : p.updatedAt,
-      history: [...p.history, event('attachment', `${attachments.length} anexo(s) adicionado(s): ${attachments.map((a) => a.name).join(', ')}`, actorName(), now)],
-    }))
-  }
+  const currentUser = useMemo<Persona | null>(() => {
+    if (session.phase !== 'signed') return null
+    const { me } = session
+    return { id: me.id, name: me.name, email: me.email, phone: me.phone, role: me.role, isAdmin: me.isAdmin, teamIds: me.teamIds, subtitle: me.title || ACCOUNT_ROLE_LABEL[me.role] }
+  }, [session])
 
-  const upsert = <T extends { id: string }>(list: T[], item: T) =>
-    list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item]
+  if (session.phase === 'loading') return <SplashScreen />
+  if (session.phase === 'anonymous' || !currentUser) return <LoginPage onLogin={login} />
+  if (session.me.mustChangePassword) return <ChangePasswordPage name={session.me.name} onSubmit={changePassword} onLogout={logout} />
+  if (!data) return <SplashScreen error={loadError ? 'Não foi possível carregar os dados do portal.' : undefined} onRetry={() => { setLoadError(false); refresh().catch(() => setLoadError(true)) }} />
+
+  const ok = async (send: () => Promise<{ protocol: Protocol | null }>, removedId?: string) => (await mutateProtocol(send, removedId)) !== false
+
+  const markRead = (id?: string) => {
+    revision.current++
+    setData((d) => d && { ...d, notifications: d.notifications.map((n) => (!id || n.id === id ? { ...n, read: true } : n)) })
+    api.post('/notifications/read', id ? { id } : {}).catch(() => {})
+  }
 
   const value: StoreValue = {
-    ...state,
+    ...data,
     currentUser,
-    personas,
-    setCurrentUser: (id) => setState((s) => ({ ...s, currentUserId: id })),
-    getCategoryName: (id) => state.categories.find((c) => c.id === id)?.name ?? 'Sem categoria',
-    getUser: (id) => state.users.find((u) => u.id === id),
-    getObserver: (id) => state.observers.find((o) => o.id === id),
-    createProtocol,
-    sendMessage,
-    changeStatus,
-    assignResponsible,
-    addObservers,
-    removeObserver,
-    addAttachments,
-    saveCategory: (c) => setState((s) => ({ ...s, categories: upsert(s.categories, c) })),
-    saveObserver: (o) => setState((s) => ({ ...s, observers: upsert(s.observers, o) })),
-    saveUser: (u) => setState((s) => ({ ...s, users: upsert(s.users, u) })),
-    updateSettings: (patch) => setState((s) => ({ ...s, settings: { ...s.settings, ...patch } })),
-    markNotificationRead: (id) => setState((s) => ({ ...s, notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
-    markAllNotificationsRead: () => setState((s) => ({ ...s, notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
-    resetDemo: () => setState(createInitialState()),
+    getCategoryName: (id) => data.categories.find((c) => c.id === id)?.name ?? 'Sem categoria',
+    getUser: (id) => data.users.find((u) => u.id === id),
+    getObserver: (id) => data.observers.find((o) => o.id === id),
+    createProtocol: async (input, files) =>
+      (await mutateProtocol(() => api.post('/protocols', filesForm(files, { data: JSON.stringify(input) })))) || null,
+    sendMessage: (protocolId, content, files) => ok(() => api.post(`/protocols/${protocolId}/messages`, filesForm(files, { content }))),
+    changeStatus: (protocolId, status) => ok(() => api.patch(`/protocols/${protocolId}`, { status })),
+    assignResponsible: (protocolId, userId) => ok(() => api.patch(`/protocols/${protocolId}`, { responsibleId: userId })),
+    addObservers: (protocolId, ids) => ok(() => api.post(`/protocols/${protocolId}/observers`, { ids })),
+    removeObserver: (protocolId, id) => ok(() => api.delete(`/protocols/${protocolId}/observers/${id}`), protocolId),
+    addAttachments: (protocolId, files) => ok(() => api.post(`/protocols/${protocolId}/attachments`, filesForm(files))),
+    saveCategory: async ({ id, ...body }) =>
+      (await mutateAdmin(() => (id ? api.patch(`/admin/categories/${id}`, body) : api.post('/admin/categories', body)))) !== null,
+    saveTeam: async ({ id, ...body }) =>
+      (await mutateAdmin(() => (id ? api.patch(`/admin/teams/${id}`, body) : api.post('/admin/teams', body)))) !== null,
+    updateDetails: (protocolId, d) => ok(() => api.patch(`/protocols/${protocolId}/details`, d)),
+    saveItem: (protocolId, itemId, item) =>
+      ok(() => (itemId ? api.put(`/protocols/${protocolId}/items/${itemId}`, item) : api.post(`/protocols/${protocolId}/items`, item))),
+    removeItem: (protocolId, itemId) => ok(() => api.delete(`/protocols/${protocolId}/items/${itemId}`)),
+    searchProducts: async (q) => (await api.get<{ products: Product[] }>(`/products?q=${encodeURIComponent(q)}`)).products,
+    saveLookup: async ({ id, kind, ...body }) =>
+      (await mutateAdmin(() => (id ? api.patch(`/admin/lookups/${id}`, body) : api.post('/admin/lookups', { kind, ...body })))) !== null,
+    saveProduct: async ({ code, ...body }, isNew) =>
+      (await mutateAdmin(() => (isNew ? api.post('/admin/products', { code, ...body }) : api.patch(`/admin/products/${encodeURIComponent(code)}`, body)))) !== null,
+    saveGoals: async (year, g) => (await mutateAdmin(() => api.put(`/admin/goals/${year}`, g))) !== null,
+    saveAccount: ({ id, ...body }) =>
+      mutateAdmin(() => (id ? api.patch<AccountResult>(`/admin/users/${id}`, body) : api.post<AccountResult>('/admin/users', body))),
+    resetPassword: async (userId) =>
+      (await mutateAdmin(() => api.post<{ temporaryPassword: string }>(`/admin/users/${userId}/reset-password`)))?.temporaryPassword ?? null,
+    updateSettings: async (s) => (await mutateAdmin(() => api.patch('/admin/settings', s))) !== null,
+    markNotificationRead: (id) => markRead(id),
+    markAllNotificationsRead: () => markRead(),
+    changePassword,
+    logout,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

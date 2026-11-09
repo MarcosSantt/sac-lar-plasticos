@@ -1,0 +1,19 @@
+# Banco de dados para desenvolvimento local (a API e o frontend rodam fora do Docker).
+# Nome de projeto próprio: não se mistura com o banco de produção do docker-compose.yml.
+name: sac-demo-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sac
+      POSTGRES_PASSWORD: sac
+      POSTGRES_DB: sac
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - sac_dev_db:/var/lib/postgresql/data
+
+volumes:
+  sac_dev_db:
+    name: sac-demo_sac_dev_db

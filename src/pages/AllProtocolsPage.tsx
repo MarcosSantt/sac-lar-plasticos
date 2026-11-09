@@ -13,7 +13,7 @@ import { formatDuration } from '../utils/format'
 const PAGE_SIZE = 8
 
 export function AllProtocolsPage() {
-  const { protocols, settings } = useStore()
+  const { protocols, settings, currentUser } = useStore()
   const sorted = useMemo(() => [...protocols].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [protocols])
   const { filters, set, reset, filtered, activeCount } = useProtocolFilters(sorted)
   const [page, setPage] = useState(1)
@@ -41,7 +41,7 @@ export function AllProtocolsPage() {
       <PageHeader
         crumbs={[{ label: 'Início', to: '/' }, { label: 'Todos os Protocolos' }]}
         title="Todos os Protocolos"
-        description="Visão da equipe SAC com todos os atendimentos da empresa."
+        description={currentUser.role === 'agent' ? 'Visão da equipe SAC com todos os atendimentos da empresa.' : 'Protocolos das equipes que você acompanha.'}
       />
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">

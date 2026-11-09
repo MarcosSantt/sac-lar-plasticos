@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2, Eye, FileText, Info, Loader2, Paperclip, Plus, Send, User } from 'lucide-react'
+import { Building2, CheckCircle2, Eye, FileText, Info, Loader2, Package, Paperclip, Plus, Send, Trash2, User } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
 import { useFileAttachments } from '../hooks/useFileAttachments'
-import type { Priority, Protocol, RequestType } from '../types'
+import type { Priority, Product, Protocol, RequestType, SaleType } from '../types'
+import { ProductPicker } from '../components/ProductPicker'
 import { PageHeader } from '../components/PageHeader'
 import { FormField } from '../components/FormField'
 import { ParticipantSelector } from '../components/ParticipantSelector'
@@ -24,9 +25,21 @@ interface FormState {
   priority: Priority | ''
   location: string
   description: string
+  teamId: string
+  customerName: string
+  invoiceNumber: string
+  invoiceDate: string
+  orderNumber: string
+  saleType: SaleType
 }
 
-type Errors = Partial<Record<keyof FormState, string>>
+type Errors = Partial<Record<keyof FormState | 'items', string>>
+
+interface ItemDraft { key: number; product: Product | null; quantity: string; description: string }
+type ItemErrors = Record<number, { product?: string; quantity?: string }>
+
+let nextItemKey = 1
+const newItem = (): ItemDraft => ({ key: nextItemKey++, product: null, quantity: '1', description: '' })
 
 const PRIORITY_HINT: Record<Priority, string> = {
   baixa: 'Sem impacto imediato',
@@ -51,21 +64,34 @@ function Section({ icon, title, description, children }: { icon: ReactNode; titl
 }
 
 export function NewProtocolPage() {
-  const { categories, observers, users, currentUser, createProtocol } = useStore()
+  const { categories, observers, teams, currentUser, createProtocol } = useStore()
+  // O vendedor abre sempre na própria equipe; o pós-vendas escolhe entre as que acompanha.
+  const choosesTeam = currentUser.role === 'post_sales'
+  const myTeams = useMemo(() => teams.filter((t) => t.active && currentUser.teamIds.includes(t.id)), [teams, currentUser.teamIds])
   const navigate = useNavigate()
   const toast = useToast()
-  const isRequester = currentUser.role === 'requester'
-  const requesterUser = users.find((u) => u.id === currentUser.id)
+  // Quem abre o protocolo não pode se colocar como observador dele.
+  const selectableObservers = useMemo(() => observers.filter((o) => o.id !== currentUser.id), [observers, currentUser.id])
 
+  // Vem preenchido com os dados de quem está logado, mas pode ser ajustado
+  // quando o protocolo é registrado em nome de outra pessoa.
   const initial: FormState = {
-    name: isRequester ? currentUser.name : '',
-    email: isRequester ? currentUser.email : '',
-    phone: isRequester ? requesterUser?.phone ?? '' : '',
+    name: currentUser.name,
+    email: currentUser.email,
+    phone: currentUser.phone,
     type: 'Solicitação', categoryId: '', title: '', priority: '', location: '', description: '',
+    teamId: choosesTeam && myTeams.length === 1 ? myTeams[0].id : '',
+    customerName: '', invoiceNumber: '', invoiceDate: '', orderNumber: '', saleType: 'B2B',
   }
   const [form, setForm] = useState<FormState>(initial)
   const [observerIds, setObserverIds] = useState<string[]>([])
   const [errors, setErrors] = useState<Errors>({})
+  const [items, setItems] = useState<ItemDraft[]>(() => [newItem()])
+  const [itemErrors, setItemErrors] = useState<ItemErrors>({})
+  const setItem = (key: number, patch: Partial<ItemDraft>) => {
+    setItems((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)))
+    if (itemErrors[key]) setItemErrors((e) => ({ ...e, [key]: {} }))
+  }
   const [submitting, setSubmitting] = useState(false)
   const [created, setCreated] = useState<Protocol | null>(null)
   const files = useFileAttachments(form.name || currentUser.name)
@@ -77,11 +103,24 @@ export function NewProtocolPage() {
     if (errors[k]) setErrors((e) => ({ ...e, [k]: undefined }))
   }
 
+  const validateItems = (): ItemErrors => {
+    const e: ItemErrors = {}
+    for (const i of items) {
+      const q = Number(i.quantity)
+      const err = { product: i.product ? undefined : 'Selecione o produto.', quantity: Number.isInteger(q) && q > 0 ? undefined : 'Quantidade inválida.' }
+      if (err.product || err.quantity) e[i.key] = err
+    }
+    return e
+  }
+
   const validate = (): Errors => {
     const e: Errors = {}
+    if (!form.customerName.trim()) e.customerName = 'Informe o cliente (razão social).'
+    if (!form.invoiceNumber.trim()) e.invoiceNumber = 'Informe o número da nota fiscal.'
     if (!form.name.trim()) e.name = 'Informe o nome do solicitante.'
     if (!form.email.trim()) e.email = 'Informe um e-mail para receber as atualizações.'
     else if (!/^\S+@\S+\.\S+$/.test(form.email)) e.email = 'Este e-mail parece incompleto. Confira, por favor.'
+    if (choosesTeam && !form.teamId) e.teamId = 'Selecione a equipe deste protocolo.'
     if (!form.categoryId) e.categoryId = 'Selecione uma categoria para continuar.'
     if (!form.title.trim()) e.title = 'Dê um título curto que resuma a solicitação.'
     if (!form.priority) e.priority = 'Escolha a prioridade do atendimento.'
@@ -89,37 +128,47 @@ export function NewProtocolPage() {
     return e
   }
 
-  const submit = (ev: FormEvent) => {
+  const submit = async (ev: FormEvent) => {
     ev.preventDefault()
     const e = validate()
+    const ie = validateItems()
     setErrors(e)
-    if (Object.keys(e).length) {
-      toast({ variant: 'error', title: 'Revise os campos destacados', description: `${Object.keys(e).length} campo(s) precisam de atenção antes de abrir o protocolo.` })
-      const first = formRef.current?.querySelector(`[name="${Object.keys(e)[0]}"]`) as HTMLElement | null
+    setItemErrors(ie)
+    const problems = Object.keys(e).length + Object.keys(ie).length
+    if (problems) {
+      toast({ variant: 'error', title: 'Revise os campos destacados', description: `${problems} campo(s) precisam de atenção antes de abrir o protocolo.` })
+      const firstItem = items.find((i) => ie[i.key])
+      const first = formRef.current?.querySelector(Object.keys(e).length ? `[name="${Object.keys(e)[0]}"]` : `[name="item-${firstItem?.key}"]`) as HTMLElement | null
       first?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       first?.focus({ preventScroll: true })
       return
     }
     setSubmitting(true)
-    window.setTimeout(() => {
-      const p = createProtocol({
-        requester: { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() },
-        type: form.type,
-        categoryId: form.categoryId,
-        title: form.title,
-        priority: form.priority as Priority,
-        location: form.location,
-        description: form.description,
-        observerIds,
-        attachments: files.attachments,
-      })
-      setSubmitting(false)
-      setCreated(p)
-    }, 900)
+    const p = await createProtocol({
+      requester: { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() },
+      type: form.type,
+      categoryId: form.categoryId,
+      title: form.title.trim(),
+      priority: form.priority as Priority,
+      location: form.location.trim(),
+      description: form.description.trim(),
+      observerIds,
+      teamId: choosesTeam ? form.teamId : undefined,
+      customerName: form.customerName.trim(),
+      invoiceNumber: form.invoiceNumber.trim(),
+      invoiceDate: form.invoiceDate || null,
+      orderNumber: form.orderNumber.trim(),
+      saleType: form.saleType,
+      items: items.map((i) => ({ productCode: i.product!.code, quantity: Number(i.quantity), description: i.description.trim() })),
+    }, files.files)
+    setSubmitting(false)
+    if (p) setCreated(p)
   }
 
   const resetForm = () => {
     setForm(initial)
+    setItems([newItem()])
+    setItemErrors({})
     setObserverIds([])
     files.clear()
     setErrors({})
@@ -138,7 +187,61 @@ export function NewProtocolPage() {
 
       <form ref={formRef} onSubmit={submit} noValidate className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
-          <Section icon={<User className="h-4 w-4" />} title="Cliente / Solicitante" description="Quem está solicitando o atendimento.">
+          <Section icon={<Building2 className="h-4 w-4" />} title="Cliente e nota fiscal" description="Dados da venda em que ocorreu o problema.">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <FormField label="Cliente (razão social)" required error={errors.customerName} htmlFor="customerName" className="sm:col-span-2 lg:col-span-3">
+                <input id="customerName" name="customerName" className={`input ${err('customerName')}`} value={form.customerName} onChange={(e) => set('customerName', e.target.value)} placeholder="Ex.: KMI PLASTICOS" maxLength={200} />
+              </FormField>
+              <FormField label="Tipo de venda" required htmlFor="saleType">
+                <select id="saleType" name="saleType" className="input" value={form.saleType} onChange={(e) => set('saleType', e.target.value as SaleType)}>
+                  <option value="B2B">B2B</option>
+                  <option value="B2C">B2C</option>
+                </select>
+              </FormField>
+              <FormField label="Nota fiscal" required error={errors.invoiceNumber} htmlFor="invoiceNumber">
+                <input id="invoiceNumber" name="invoiceNumber" className={`input ${err('invoiceNumber')}`} value={form.invoiceNumber} onChange={(e) => set('invoiceNumber', e.target.value)} placeholder="Nº da NF" maxLength={40} />
+              </FormField>
+              <FormField label="Emissão da NF" htmlFor="invoiceDate" hint="Opcional">
+                <input id="invoiceDate" name="invoiceDate" type="date" className="input" value={form.invoiceDate} onChange={(e) => set('invoiceDate', e.target.value)} />
+              </FormField>
+              <FormField label="Nº do pedido" htmlFor="orderNumber" hint="Opcional">
+                <input id="orderNumber" name="orderNumber" className="input" value={form.orderNumber} onChange={(e) => set('orderNumber', e.target.value)} maxLength={40} />
+              </FormField>
+            </div>
+          </Section>
+
+          <Section icon={<Package className="h-4 w-4" />} title="Itens reclamados" description="Um item por produto. Cada item recebe a própria tratativa do SAC (ex.: um bonificado e outro em concessão).">
+            <div className="space-y-3">
+              {items.map((item, index) => (
+                <div key={item.key} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Item {index + 1}</span>
+                    {items.length > 1 && (
+                      <button type="button" className="btn-ghost px-2 py-1 text-xs hover:bg-red-50 hover:text-red-600" onClick={() => setItems((l) => l.filter((i) => i.key !== item.key))}>
+                        <Trash2 className="h-3.5 w-3.5" /> Remover
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
+                    <FormField label="Produto" required error={itemErrors[item.key]?.product} htmlFor={`item-${item.key}`}>
+                      <ProductPicker id={`item-${item.key}`} name={`item-${item.key}`} value={item.product} onChange={(p) => setItem(item.key, { product: p })} invalid={!!itemErrors[item.key]?.product} />
+                    </FormField>
+                    <FormField label="Quantidade" required error={itemErrors[item.key]?.quantity} htmlFor={`qty-${item.key}`}>
+                      <input id={`qty-${item.key}`} type="number" min={1} step={1} className={`input ${itemErrors[item.key]?.quantity ? 'input-error' : ''}`} value={item.quantity} onChange={(e) => setItem(item.key, { quantity: e.target.value })} />
+                    </FormField>
+                    <FormField label="O que aconteceu com este item" htmlFor={`desc-${item.key}`} className="sm:col-span-2" hint="Ex.: tampa quebrada na lateral, faltou o pedal">
+                      <input id={`desc-${item.key}`} className="input" value={item.description} onChange={(e) => setItem(item.key, { description: e.target.value })} maxLength={2000} />
+                    </FormField>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setItems((l) => [...l, newItem()])} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 py-2 text-[13px] font-medium text-brand-600 transition hover:border-brand-400 hover:bg-brand-50/50">
+              <Plus className="h-4 w-4" /> Adicionar item
+            </button>
+          </Section>
+
+          <Section icon={<User className="h-4 w-4" />} title="Contato para retorno" description="Quem recebe as atualizações deste atendimento.">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <FormField label="Nome" required error={errors.name} htmlFor="name">
                 <input id="name" name="name" className={`input ${err('name')}`} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nome completo" />
@@ -154,6 +257,14 @@ export function NewProtocolPage() {
 
           <Section icon={<FileText className="h-4 w-4" />} title="Informações da solicitação" description="Quanto mais detalhes, mais rápido conseguimos resolver.">
             <div className="grid gap-4 sm:grid-cols-2">
+              {choosesTeam && (
+                <FormField label="Equipe" required error={errors.teamId} htmlFor="teamId" hint="O coordenador da equipe escolhida acompanha este protocolo" className="sm:col-span-2">
+                  <select id="teamId" name="teamId" className={`input ${err('teamId')} ${form.teamId ? '' : 'text-slate-400'}`} value={form.teamId} onChange={(e) => set('teamId', e.target.value)}>
+                    <option value="">Selecione a equipe</option>
+                    {myTeams.map((t) => <option key={t.id} value={t.id} className="text-slate-800">{t.name}</option>)}
+                  </select>
+                </FormField>
+              )}
               <FormField label="Tipo de solicitação" required htmlFor="type">
                 <select id="type" name="type" className="input" value={form.type} onChange={(e) => set('type', e.target.value as RequestType)}>
                   {REQUEST_TYPES.map((t) => <option key={t}>{t}</option>)}
@@ -209,7 +320,7 @@ export function NewProtocolPage() {
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
               <p>Funciona como o campo <b>CC</b> de um e-mail: observadores recebem as atualizações e também podem <b>visualizar, responder e enviar anexos</b> no protocolo.</p>
             </div>
-            <ParticipantSelector observers={observers} selected={observerIds} onChange={setObserverIds} />
+            <ParticipantSelector observers={selectableObservers} selected={observerIds} onChange={setObserverIds} />
           </Section>
 
           <Section icon={<Paperclip className="h-4 w-4" />} title="Anexos" description="Fotos, notas fiscais, comprovantes ou documentos que ajudem na análise.">
@@ -230,7 +341,10 @@ export function NewProtocolPage() {
             <h2 className="flex items-center gap-2 font-semibold text-slate-900"><img src={asset('favicon-lar.png')} alt="" className="h-5 w-5" />Resumo do protocolo</h2>
             <dl className="mt-3 space-y-2.5 text-[13px]">
               {[
+                ['Cliente', form.customerName || '—'],
+                ['Itens', `${items.length} item(ns) · ${items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)} un.`],
                 ['Solicitante', form.name || '—'],
+                ['Equipe', teams.find((t) => t.id === (choosesTeam ? form.teamId : currentUser.teamIds[0]))?.name ?? '—'],
                 ['Tipo', form.type],
                 ['Categoria', activeCategories.find((c) => c.id === form.categoryId)?.name ?? '—'],
                 ['Prioridade', form.priority ? PRIORITY_META[form.priority].label : '—'],

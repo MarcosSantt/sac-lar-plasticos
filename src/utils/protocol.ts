@@ -1,4 +1,4 @@
-import type { Priority, Protocol, ProtocolStatus, RequestType } from '../types'
+import type { Persona, PersonRole, Priority, Protocol, ProtocolStatus, RequestType } from '../types'
 import { minutesBetween } from './format'
 
 export const STATUS_META: Record<ProtocolStatus, { label: string; dot: string; badge: string; emoji: string; pulse?: boolean }> = {
@@ -38,6 +38,12 @@ export const REQUEST_TYPES: RequestType[] = ['Solicitação', 'Reclamação', 'D
 export const OPEN_STATUSES: ProtocolStatus[] = ['novo', 'em_atendimento', 'aguardando_cliente', 'aguardando_terceiro']
 
 export const isClosed = (s: ProtocolStatus) => s === 'resolvido' || s === 'fechado'
+
+/** Papel da pessoa dentro de um protocolo: quem abriu é solicitante; os demais participam pelo próprio perfil. */
+export function roleInProtocol(p: Protocol, person: Persona): PersonRole {
+  if (p.requesterId === person.id) return 'requester'
+  return person.role === 'seller' ? 'observer' : person.role
+}
 
 export interface ProtocolMetrics {
   firstResponse: number | null

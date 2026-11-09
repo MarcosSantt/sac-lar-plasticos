@@ -2,14 +2,13 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import {
-  ArrowLeft, Clock, FileSearch, History, Info, MapPin, Mail, MessageSquare, PanelRightOpen, Paperclip, Phone,
+  ArrowLeft, Clock, FileSearch, History, Info, MapPin, Mail, MessageSquare, Package, PanelRightOpen, Paperclip, Phone,
   Plus, User, UserCheck, Users, X,
 } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
 import type { ProtocolStatus } from '../types'
 import { STATUS_META } from '../utils/protocol'
 import { formatDateTime, formatRelative } from '../utils/format'
-import { filesToAttachments } from '../hooks/useFileAttachments'
 import { EmptyState } from '../components/EmptyState'
 import { StatusBadge } from '../components/StatusBadge'
 import { PriorityBadge } from '../components/PriorityBadge'
@@ -26,8 +25,10 @@ import { Modal } from '../components/Modal'
 import { Avatar } from '../components/Avatar'
 import { useToast } from '../components/Toast'
 import { asset } from '../utils/asset'
+import { canSeePortfolio, isSacTeam } from '../utils/access'
+import { ProtocolItems } from '../components/ProtocolItems'
 
-type Tab = 'conversa' | 'detalhes' | 'anexos' | 'participantes' | 'historico'
+type Tab = 'conversa' | 'itens' | 'detalhes' | 'anexos' | 'participantes' | 'historico'
 
 export function ProtocolRoute() {
   const { number } = useParams()
@@ -64,38 +65,46 @@ function ProtocolPage({ number }: { number: string }) {
           icon={<FileSearch className="h-6 w-6" />}
           title="Protocolo não encontrado"
           description={`Não localizamos o protocolo ${number}. Verifique o número ou procure na lista de protocolos.`}
-          action={<Link to="/protocolos" className="btn-primary">Ver todos os protocolos</Link>}
+          action={<Link to="/meus-protocolos" className="btn-primary">Ver meus protocolos</Link>}
         />
       </div>
     )
   }
 
-  const canManage = currentUser.role === 'agent'
+  const canManage = isSacTeam(currentUser)
+  // A equipe SAC e quem abriu o protocolo podem remover observadores.
+  const canRemoveObservers = canManage || protocol.requesterId === currentUser.id
   const responsible = getUser(protocol.responsibleId)
+  const listPath = canSeePortfolio(currentUser) ? '/protocolos' : '/meus-protocolos'
 
-  const changeStatus = (s: ProtocolStatus) => {
+  const changeStatus = async (s: ProtocolStatus) => {
     const from = STATUS_META[protocol.status].label
-    store.changeStatus(protocol.id, s)
+    if (!(await store.changeStatus(protocol.id, s))) return
     toast({ variant: 'success', title: 'Status atualizado', description: `Status alterado de ${from} para ${STATUS_META[s].label}.` })
   }
 
-  const confirmObservers = () => {
+  const assign = async (userId: string) => {
+    if (!(await store.assignResponsible(protocol.id, userId))) return
+    toast({ variant: 'success', title: 'Responsável atualizado', description: `Protocolo atribuído a ${users.find((u) => u.id === userId)?.name}.` })
+  }
+
+  const confirmObservers = async () => {
     if (!toAdd.length) return
-    store.addObservers(protocol.id, toAdd)
+    if (!(await store.addObservers(protocol.id, toAdd))) return
     const names = toAdd.map((id) => observers.find((o) => o.id === id)?.name).join(', ')
     toast({ variant: 'success', title: toAdd.length > 1 ? 'Observadores adicionados' : 'Observador adicionado', description: `${names} agora participa(m) deste protocolo.` })
     setToAdd([])
     setAddOpen(false)
   }
 
-  const removeObserver = (id: string) => {
-    store.removeObserver(protocol.id, id)
+  const removeObserver = async (id: string) => {
+    if (!(await store.removeObserver(protocol.id, id))) return
     toast({ variant: 'info', title: 'Observador removido', description: `${observers.find((o) => o.id === id)?.name} não acompanha mais este protocolo.` })
   }
 
   const uploadToProtocol = async (files: FileList) => {
-    const list = await filesToAttachments(files, currentUser.name)
-    store.addAttachments(protocol.id, list)
+    const list = Array.from(files)
+    if (!(await store.addAttachments(protocol.id, list))) return
     toast({ variant: 'success', title: 'Anexo adicionado', description: `${list.length} arquivo(s) anexado(s) ao protocolo.` })
   }
 
@@ -103,20 +112,21 @@ function ProtocolPage({ number }: { number: string }) {
 
   const TABS: { id: Tab; label: string; icon: typeof Info; count?: number }[] = [
     { id: 'conversa', label: 'Conversa', icon: MessageSquare, count: protocol.messages.length },
+    { id: 'itens', label: 'Itens', icon: Package, count: protocol.items.length },
     { id: 'detalhes', label: 'Detalhes', icon: Info },
     { id: 'anexos', label: 'Anexos', icon: Paperclip, count: protocol.attachments.length },
     { id: 'participantes', label: 'Participantes', icon: Users },
     { id: 'historico', label: 'Histórico', icon: History, count: protocol.history.length },
   ]
 
-  const details = <ProtocolDetails protocol={protocol} onAddObserver={openAdd} onRemoveObserver={removeObserver} />
+  const details = <ProtocolDetails protocol={protocol} onAddObserver={openAdd} onRemoveObserver={canRemoveObservers ? removeObserver : undefined} />
 
   return (
     <div className="animate-slide-up">
       {/* Cabeçalho do protocolo */}
       <div className="mb-5">
         <nav aria-label="Você está em" className="mb-3 flex items-center gap-2 text-xs text-slate-500">
-          <Link to="/protocolos" className="flex items-center gap-1 hover:text-brand-600"><ArrowLeft className="h-3.5 w-3.5" /> Protocolos</Link>
+          <Link to={listPath} className="flex items-center gap-1 hover:text-brand-600"><ArrowLeft className="h-3.5 w-3.5" /> Protocolos</Link>
           <span className="text-slate-300">/</span>
           <span className="font-mono text-slate-700">{protocol.protocolNumber}</span>
         </nav>
@@ -149,10 +159,7 @@ function ProtocolPage({ number }: { number: string }) {
             {canManage && (
               <select
                 value={protocol.responsibleId ?? ''}
-                onChange={(e) => {
-                  store.assignResponsible(protocol.id, e.target.value)
-                  toast({ variant: 'success', title: 'Responsável atualizado', description: `Protocolo atribuído a ${users.find((u) => u.id === e.target.value)?.name}.` })
-                }}
+                onChange={(e) => assign(e.target.value)}
                 className="input w-auto py-2 text-[13px]"
                 aria-label="Responsável"
               >
@@ -164,18 +171,13 @@ function ProtocolPage({ number }: { number: string }) {
               value={protocol.status}
               onChange={changeStatus}
               disabled={!canManage}
-              disabledReason="Apenas a equipe SAC pode alterar o status. Alterne para um atendente no menu do usuário."
+              disabledReason="Apenas a equipe SAC pode alterar o status."
             />
             <button onClick={() => setDrawer(true)} className="btn-secondary xl:hidden">
               <PanelRightOpen className="h-4 w-4" /> Detalhes
             </button>
           </div>
         </div>
-        {!canManage && (
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-            <Info className="h-3.5 w-3.5" /> Você está como <b className="font-medium text-slate-700">{currentUser.name}</b> ({currentUser.subtitle}). Para alterar o status, alterne para um atendente SAC no menu do usuário.
-          </p>
-        )}
           </div>
         </div>
       </div>
@@ -208,6 +210,8 @@ function ProtocolPage({ number }: { number: string }) {
               <MessageComposer key={protocol.id} protocol={protocol} />
             </>
           )}
+
+          {tab === 'itens' && <ProtocolItems protocol={protocol} canManage={canManage} />}
 
           {tab === 'detalhes' && (
             <div className="animate-fade-in space-y-6 p-5 sm:p-6">
@@ -269,7 +273,7 @@ function ProtocolPage({ number }: { number: string }) {
                 <p className="text-[13px] text-slate-500">Todos os participantes podem visualizar, responder e anexar arquivos neste protocolo.</p>
                 <button onClick={openAdd} className="btn-primary shrink-0"><Plus className="h-4 w-4" /> Adicionar observador</button>
               </div>
-              <ParticipantList protocol={protocol} detailed onRemoveObserver={removeObserver} />
+              <ParticipantList protocol={protocol} detailed onRemoveObserver={canRemoveObservers ? removeObserver : undefined} />
             </div>
           )}
 
@@ -316,7 +320,7 @@ function ProtocolPage({ number }: { number: string }) {
           </>
         }
       >
-        <ParticipantSelector observers={observers} selected={toAdd} onChange={setToAdd} disabledIds={protocol.observerIds} />
+        <ParticipantSelector observers={observers} selected={toAdd} onChange={setToAdd} disabledIds={[...protocol.observerIds, protocol.requesterId]} />
       </Modal>
     </div>
   )

@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { Eye, Pencil, Plus, Power, Search } from 'lucide-react'
+import { Eye, KeyRound, Pencil, Plus, Power, Search } from 'lucide-react'
 import type { Observer } from '../types'
 import { useStore } from '../store/StoreContext'
-import { normalize, uid } from '../utils/format'
+import { normalize } from '../utils/format'
 import { Modal } from './Modal'
 import { FormField } from './FormField'
 import { ActiveBadge, StatusSwitch } from './ActiveToggle'
 import { EmptyState } from './EmptyState'
 import { Avatar } from './Avatar'
+import { TemporaryPasswordModal, type TemporaryPassword } from './TemporaryPasswordModal'
 import { useToast } from './Toast'
 
 const EMPTY: Observer = { id: '', name: '', email: '', department: '', active: true }
@@ -16,16 +17,18 @@ const DEPARTMENTS = ['Financeiro', 'Comercial', 'Logística', 'Qualidade', 'Jur�
 type Errors = Partial<Record<'name' | 'email' | 'department', string>>
 
 export function ObserverManager() {
-  const { observers, protocols, saveObserver } = useStore()
+  const { observers, protocols, saveAccount, resetPassword } = useStore()
   const toast = useToast()
   const [editing, setEditing] = useState<Observer | null>(null)
   const [errors, setErrors] = useState<Errors>({})
   const [query, setQuery] = useState('')
+  const [temporary, setTemporary] = useState<TemporaryPassword | null>(null)
+  const [resetting, setResetting] = useState<Observer | null>(null)
 
   const list = observers.filter((o) => normalize(`${o.name} ${o.email} ${o.department}`).includes(normalize(query)))
   const following = (id: string) => protocols.filter((p) => p.observerIds.includes(id)).length
 
-  const save = () => {
+  const save = async () => {
     if (!editing) return
     const e: Errors = {}
     if (!editing.name.trim()) e.name = 'Informe o nome do observador.'
@@ -34,14 +37,24 @@ export function ObserverManager() {
     if (!editing.department.trim()) e.department = 'Selecione ou informe o departamento.'
     setErrors(e)
     if (Object.keys(e).length) return
-    const isNew = !editing.id
-    saveObserver({ ...editing, name: editing.name.trim(), email: editing.email.trim(), department: editing.department.trim(), id: editing.id || uid('o') })
-    toast({ variant: 'success', title: isNew ? 'Observador cadastrado' : 'Observador atualizado', description: isNew ? `${editing.name.trim()} já pode ser adicionado aos protocolos.` : 'Alterações salvas.' })
+    const account = { ...editing, name: editing.name.trim(), email: editing.email.trim(), department: editing.department.trim() }
+    const result = await saveAccount({ ...account, role: 'observer', title: 'Observador' })
+    if (!result) return
     setEditing(null)
+    if (result.temporaryPassword) setTemporary({ name: account.name, email: account.email, password: result.temporaryPassword })
+    else toast({ variant: 'success', title: 'Observador atualizado', description: 'Alterações salvas.' })
   }
 
-  const toggle = (o: Observer) => {
-    saveObserver({ ...o, active: !o.active })
+  const confirmReset = async () => {
+    if (!resetting) return
+    const o = resetting
+    setResetting(null)
+    const password = await resetPassword(o.id)
+    if (password) setTemporary({ name: o.name, email: o.email, password })
+  }
+
+  const toggle = async (o: Observer) => {
+    if (!(await saveAccount({ ...o, role: 'observer', title: 'Observador', active: !o.active }))) return
     toast({ variant: 'success', title: o.active ? 'Observador desativado' : 'Observador ativado', description: o.name })
   }
 
@@ -81,6 +94,7 @@ export function ObserverManager() {
                     <td className="td">
                       <div className="flex justify-end gap-1">
                         <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => open(o)}><Pencil className="h-3.5 w-3.5" /> Editar</button>
+                        <button className="btn-ghost px-2.5 py-1.5 text-xs" onClick={() => setResetting(o)}><KeyRound className="h-3.5 w-3.5" /> Redefinir senha</button>
                         <button className={`btn-ghost px-2.5 py-1.5 text-xs ${o.active ? 'hover:bg-red-50 hover:text-red-600' : 'hover:bg-brand-50 hover:text-brand-700'}`} onClick={() => toggle(o)}>
                           <Power className="h-3.5 w-3.5" /> {o.active ? 'Desativar' : 'Ativar'}
                         </button>
@@ -98,7 +112,7 @@ export function ObserverManager() {
         open={!!editing}
         onClose={() => setEditing(null)}
         title={editing?.id ? 'Editar observador' : 'Novo observador'}
-        description="Observadores ativos aparecem na abertura de protocolos."
+        description={editing?.id ? 'Observadores ativos aparecem na abertura de protocolos.' : 'O observador recebe um login próprio; ao salvar, o portal gera a senha provisória.'}
         footer={<><button className="btn-secondary" onClick={() => setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={save}>Salvar observador</button></>}
       >
         {editing && (
@@ -120,6 +134,18 @@ export function ObserverManager() {
           </form>
         )}
       </Modal>
+
+      <Modal
+        open={!!resetting}
+        onClose={() => setResetting(null)}
+        title="Redefinir senha?"
+        size="sm"
+        footer={<><button className="btn-secondary" onClick={() => setResetting(null)}>Cancelar</button><button className="btn-primary" onClick={confirmReset}>Redefinir</button></>}
+      >
+        <p className="text-sm text-slate-600">A senha atual de <b className="font-semibold text-slate-900">{resetting?.name}</b> deixa de funcionar e as sessões abertas são encerradas. Uma nova senha provisória será gerada.</p>
+      </Modal>
+
+      <TemporaryPasswordModal value={temporary} onClose={() => setTemporary(null)} />
     </div>
   )
 }

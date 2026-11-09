@@ -79,11 +79,11 @@ export function ProtocolMetrics({ protocol }: { protocol: Protocol }) {
 interface ProtocolDetailsProps {
   protocol: Protocol
   onAddObserver: () => void
-  onRemoveObserver: (id: string) => void
+  onRemoveObserver?: (id: string) => void
 }
 
 export function ProtocolDetails({ protocol: p, onAddObserver, onRemoveObserver }: ProtocolDetailsProps) {
-  const { getCategoryName, getUser } = useStore()
+  const { getCategoryName, getUser, teams } = useStore()
   const responsible = getUser(p.responsibleId)
   const participants = useParticipants(p)
   return (
@@ -98,6 +98,7 @@ export function ProtocolDetails({ protocol: p, onAddObserver, onRemoveObserver }
           <Row label="Categoria">{getCategoryName(p.categoryId)}</Row>
           <Row label="Prioridade"><PriorityBadge priority={p.priority} /></Row>
           <Row label="Solicitante">{p.requester.name}</Row>
+          {p.teamId && <Row label="Equipe">{teams.find((t) => t.id === p.teamId)?.name ?? '—'}</Row>}
           <Row label="Responsável">
             {responsible ? <span className="inline-flex items-center gap-1.5"><Avatar name={responsible.name} size="xs" />{responsible.name}</span> : <span className="text-slate-400">Não atribuído</span>}
           </Row>

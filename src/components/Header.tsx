@@ -1,32 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ChevronDown, FilePlus2, HelpCircle, Inbox, LayoutDashboard, ListFilter, LogOut, Menu, Repeat, Settings, X,
+  BarChart3, ChevronDown, FilePlus2, HelpCircle, Inbox, KeyRound, LayoutDashboard, ListFilter, LogOut, Menu, Settings, Workflow, X,
 } from 'lucide-react'
 import { useStore } from '../store/StoreContext'
 import { Avatar } from './Avatar'
 import { NotificationCenter } from './NotificationCenter'
+import { Modal } from './Modal'
+import { PasswordForm } from './PasswordForm'
 import { useToast } from './Toast'
 import { asset } from '../utils/asset'
+import { canOpenProtocol, canSeePortfolio, isSacTeam } from '../utils/access'
+import type { Persona } from '../types'
 
-const NAV = [
+const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean; only?: (u: Persona) => boolean }[] = [
   { to: '/', label: 'Início', icon: LayoutDashboard, end: true },
-  { to: '/novo', label: 'Abrir SAC', icon: FilePlus2 },
-  { to: '/meus-protocolos', label: 'Meus Protocolos', icon: Inbox },
-  { to: '/protocolos', label: 'Todos os Protocolos', icon: ListFilter, end: true },
+  { to: '/novo', label: 'Abrir SAC', icon: FilePlus2, only: canOpenProtocol },
+  { to: '/meus-protocolos', label: 'Meus Protocolos', icon: Inbox, only: (u) => u.role !== 'coordinator' },
+  { to: '/protocolos', label: 'Todos os Protocolos', icon: ListFilter, end: true, only: canSeePortfolio },
+  { to: '/workflow', label: 'Workflow', icon: Workflow, only: isSacTeam },
+  { to: '/dashboard', label: 'Dashboard', icon: BarChart3, only: canSeePortfolio },
   { to: '/faq', label: 'FAQ', icon: HelpCircle },
-  { to: '/admin', label: 'Administração', icon: Settings },
+  { to: '/admin', label: 'Administração', icon: Settings, only: (u) => u.isAdmin },
 ]
 
-const ROLE_GROUPS = [
-  { role: 'requester', label: 'Solicitantes' },
-  { role: 'agent', label: 'Equipe SAC' },
-  { role: 'observer', label: 'Observadores' },
-] as const
-
 export function Header() {
-  const { currentUser, personas, setCurrentUser, settings } = useStore()
+  const { currentUser, settings, changePassword, logout } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
@@ -41,6 +42,18 @@ export function Header() {
   }, [])
 
   const isProtocolDetail = location.pathname.startsWith('/protocolos/')
+  const nav = NAV.filter((n) => !n.only || n.only(currentUser))
+  // A tela de um protocolo destaca a lista de onde a pessoa normalmente chega até ela.
+  const detailParent = canSeePortfolio(currentUser) ? '/protocolos' : '/meus-protocolos'
+
+  const savePassword = async (current: string, next: string) => {
+    const done = await changePassword(current, next)
+    if (done) {
+      setPasswordOpen(false)
+      toast({ variant: 'success', title: 'Senha alterada', description: 'Use a nova senha no próximo acesso.' })
+    }
+    return done
+  }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `relative flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors xl:px-3 ${
@@ -67,12 +80,12 @@ export function Header() {
         </NavLink>
 
         <nav className="hidden flex-1 items-center gap-0.5 lg:flex" aria-label="Menu principal">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
               end={n.end}
-              className={(s) => linkClass({ isActive: s.isActive || (n.to === '/protocolos' && isProtocolDetail) })}
+              className={(s) => linkClass({ isActive: s.isActive || (n.to === detailParent && isProtocolDetail) })}
             >
               <n.icon className="hidden h-4 w-4 opacity-80 xl:block" />
               {n.label}
@@ -102,40 +115,16 @@ export function Header() {
                     <p className="truncate text-xs text-slate-500">{currentUser.email}</p>
                   </div>
                 </div>
-                <div className="max-h-80 overflow-y-auto py-1.5">
-                  <p className="flex items-center gap-1.5 px-4 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    <Repeat className="h-3 w-3" /> Alternar perfil (demonstração)
-                  </p>
-                  {ROLE_GROUPS.map((g) => {
-                    const list = personas.filter((p) => p.role === g.role)
-                    if (!list.length) return null
-                    return (
-                      <div key={g.role}>
-                        <p className="px-4 pt-2 pb-1 text-[11px] font-medium text-slate-500">{g.label}</p>
-                        {list.map((p) => (
-                          <button
-                            key={p.id}
-                            onClick={() => {
-                              setCurrentUser(p.id)
-                              setMenuOpen(false)
-                              toast({ variant: 'info', title: `Você está como ${p.name}`, description: p.subtitle })
-                            }}
-                            className={`flex w-full items-center gap-2.5 px-4 py-1.5 text-left text-[13px] transition hover:bg-slate-50 ${p.id === currentUser.id ? 'bg-brand-50/60' : ''}`}
-                          >
-                            <Avatar name={p.name} size="xs" />
-                            <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                            {p.id === currentUser.id && <span className="h-2 w-2 rounded-full bg-brand-500" />}
-                          </button>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
                 <div className="border-t border-slate-200 py-1.5">
-                  <button onClick={() => { setMenuOpen(false); navigate('/admin/configuracoes') }} className="flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
-                    <Settings className="h-4 w-4 text-slate-400" /> Configurações
+                  {currentUser.isAdmin && (
+                    <button onClick={() => { setMenuOpen(false); navigate('/admin/configuracoes') }} className="flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <Settings className="h-4 w-4 text-slate-400" /> Configurações
+                    </button>
+                  )}
+                  <button onClick={() => { setMenuOpen(false); setPasswordOpen(true) }} className="flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                    <KeyRound className="h-4 w-4 text-slate-400" /> Alterar senha
                   </button>
-                  <button onClick={() => { setMenuOpen(false); toast({ variant: 'info', title: 'Sessão de demonstração', description: 'Nesta demo o login é simulado. Use "Alternar perfil" para mudar de usuário.' }) }} className="flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                  <button onClick={() => { setMenuOpen(false); logout() }} className="flex w-full items-center gap-2.5 px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
                     <LogOut className="h-4 w-4 text-slate-400" /> Sair
                   </button>
                 </div>
@@ -147,13 +136,23 @@ export function Header() {
 
       {mobileNav && (
         <nav className="animate-fade-in border-t border-white/10 bg-brand-deep px-3 pb-3 lg:hidden" aria-label="Menu principal">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `mt-1 flex items-center gap-2.5 rounded-md border-l-[3px] px-3 py-2.5 text-sm font-medium transition-colors ${isActive ? 'border-brand-accent bg-white/12 text-white' : 'border-transparent text-white/75 hover:bg-white/8 hover:text-white'}`}>
               <n.icon className="h-4 w-4" /> {n.label}
             </NavLink>
           ))}
         </nav>
       )}
+
+      <Modal open={passwordOpen} onClose={() => setPasswordOpen(false)} title="Alterar senha" size="sm">
+        {passwordOpen && (
+          <PasswordForm
+            submitLabel="Alterar senha"
+            onSubmit={savePassword}
+            secondary={<button type="button" className="btn-secondary" onClick={() => setPasswordOpen(false)}>Cancelar</button>}
+          />
+        )}
+      </Modal>
     </header>
   )
 }

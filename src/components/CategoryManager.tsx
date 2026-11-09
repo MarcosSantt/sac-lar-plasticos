@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Pencil, Plus, Power, Search, Tags } from 'lucide-react'
 import type { Category } from '../types'
 import { useStore } from '../store/StoreContext'
-import { normalize, uid } from '../utils/format'
+import { normalize } from '../utils/format'
 import { Modal } from './Modal'
 import { FormField } from './FormField'
 import { ActiveBadge, StatusSwitch } from './ActiveToggle'
@@ -21,19 +21,19 @@ export function CategoryManager() {
   const usage = (id: string) => protocols.filter((p) => p.categoryId === id).length
   const list = categories.filter((c) => normalize(`${c.name} ${c.description}`).includes(normalize(query)))
 
-  const save = () => {
+  const save = async () => {
     if (!editing) return
     const name = editing.name.trim()
     if (!name) return setError('Informe o nome da categoria.')
     if (categories.some((c) => c.id !== editing.id && normalize(c.name) === normalize(name))) return setError('Já existe uma categoria com este nome.')
     const isNew = !editing.id
-    saveCategory({ ...editing, name, description: editing.description.trim(), id: editing.id || uid('cat') })
+    if (!(await saveCategory({ ...editing, name, description: editing.description.trim() }))) return
     toast({ variant: 'success', title: isNew ? 'Categoria criada' : 'Categoria atualizada', description: isNew ? `"${name}" já está disponível no formulário de abertura de SAC.` : `As alterações em "${name}" foram salvas.` })
     setEditing(null)
   }
 
-  const toggle = (c: Category) => {
-    saveCategory({ ...c, active: !c.active })
+  const toggle = async (c: Category) => {
+    if (!(await saveCategory({ ...c, active: !c.active }))) return
     toast({ variant: 'success', title: c.active ? 'Categoria desativada' : 'Categoria ativada', description: c.active ? `"${c.name}" não aparecerá mais em novos protocolos.` : `"${c.name}" voltou a aparecer no formulário.` })
   }
 

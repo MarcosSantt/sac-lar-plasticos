@@ -5,8 +5,11 @@ import { FAQ } from '../data/faq'
 import { normalize } from '../utils/format'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState } from '../components/EmptyState'
+import { useStore } from '../store/StoreContext'
+import { canOpenProtocol } from '../utils/access'
 
 export function FaqPage() {
+  const { currentUser } = useStore()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<number | null>(0)
   const [topic, setTopic] = useState('')
@@ -39,8 +42,8 @@ export function FaqPage() {
       </div>
       <div className="card mt-6 flex flex-col items-center gap-4 p-5 text-center sm:flex-row sm:text-left">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><Headphones className="h-5 w-5" /></span>
-        <div className="flex-1"><p className="font-semibold text-slate-900">Não encontrou o que procurava?</p><p className="text-sm text-slate-500">Nossa equipe responde em média em menos de 30 minutos.</p></div>
-        <Link to="/novo" className="btn-success"><Plus className="h-4 w-4" /> Abrir protocolo</Link>
+        <div className="flex-1"><p className="font-semibold text-slate-900">Não encontrou o que procurava?</p><p className="text-sm text-slate-500">A primeira resposta da nossa equipe sai em até 48 horas.</p></div>
+        {canOpenProtocol(currentUser) && <Link to="/novo" className="btn-success"><Plus className="h-4 w-4" /> Abrir protocolo</Link>}
       </div>
     </div>
   )

@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Portal
+.env
+server/.env
+server/dist
+server/uploads

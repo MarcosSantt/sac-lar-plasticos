@@ -8,6 +8,8 @@ const ROLE = {
   requester: { label: 'Solicitante', badge: 'bg-slate-100 text-slate-600', bubble: 'bg-brand-50 border-brand-100' },
   agent: { label: 'SAC Lar Plásticos', badge: 'bg-brand-600 text-white', bubble: 'bg-white border-slate-200' },
   observer: { label: 'Observador', badge: 'bg-violet-50 text-violet-700', bubble: 'bg-slate-50 border-slate-200' },
+  coordinator: { label: 'Coordenação', badge: 'bg-amber-50 text-amber-800', bubble: 'bg-slate-50 border-slate-200' },
+  post_sales: { label: 'Pós-vendas', badge: 'bg-blue-50 text-blue-700', bubble: 'bg-slate-50 border-slate-200' },
 }
 
 interface MessageBubbleProps {

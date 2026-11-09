@@ -9,10 +9,16 @@ import { EmptyState } from '../components/EmptyState'
 import { Avatar } from '../components/Avatar'
 import { average, computeMetrics, isClosed, STATUS_BAR, STATUS_META, STATUS_ORDER } from '../utils/protocol'
 import { formatDuration, formatRelative } from '../utils/format'
+import { canOpenProtocol } from '../utils/access'
 
 export function DashboardPage() {
-  const { currentUser } = useStore()
-  const mine = useMyProtocols()
+  const { currentUser, protocols } = useStore()
+  const participating = useMyProtocols()
+  // Coordenadores não abrem nem atendem protocolos: o início deles mostra a carteira inteira.
+  const portfolio = currentUser.role === 'coordinator'
+  const mine = portfolio ? [...protocols].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : participating
+  const listPath = portfolio ? '/protocolos' : '/meus-protocolos'
+  const canOpen = canOpenProtocol(currentUser)
   const navigate = useNavigate()
 
   const count = (s: string[]) => mine.filter((p) => s.includes(p.status)).length
@@ -27,7 +33,7 @@ export function DashboardPage() {
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
-  const scope = currentUser.role === 'agent' ? 'atribuídos a você' : currentUser.role === 'observer' ? 'que você acompanha' : 'que você abriu'
+  const scope = portfolio ? 'da sua carteira' : currentUser.role === 'agent' ? 'atribuídos a você ou que você acompanha' : 'que você abriu ou acompanha'
 
   return (
     <div className="animate-slide-up">
@@ -39,17 +45,19 @@ export function DashboardPage() {
             <h1 className="mt-1 text-[22px] font-semibold tracking-tight text-slate-900">{greeting}, {currentUser.name.split(' ')[0]}! Aqui está o resumo do seu atendimento.</h1>
             <p className="mt-1 text-sm text-slate-600">Indicadores dos protocolos {scope}.</p>
           </div>
-          <Link to="/novo" className="btn-primary shrink-0 px-4 py-2.5">
-            <Plus className="h-4 w-4" /> Abrir novo protocolo
-          </Link>
+          {canOpen && (
+            <Link to="/novo" className="btn-primary shrink-0 px-4 py-2.5">
+              <Plus className="h-4 w-4" /> Abrir novo protocolo
+            </Link>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <DashboardCard label="Protocolos abertos" value={count(['novo'])} hint="Aguardando triagem" tone="blue" icon={<Inbox className="h-4 w-4" />} onClick={() => navigate('/meus-protocolos?status=novo')} />
-        <DashboardCard label="Em atendimento" value={count(['em_atendimento'])} hint="Com a equipe SAC" tone="accent" icon={<UserCheck className="h-4 w-4" />} onClick={() => navigate('/meus-protocolos?status=em_atendimento')} />
-        <DashboardCard label="Aguardando cliente" value={count(['aguardando_cliente', 'aguardando_terceiro'])} hint="Inclui aguardando terceiro" tone="amber" icon={<Hourglass className="h-4 w-4" />} onClick={() => navigate('/meus-protocolos?status=aguardando_cliente')} />
-        <DashboardCard label="Resolvidos" value={count(['resolvido', 'fechado'])} hint="Inclui fechados" tone="green" icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => navigate('/meus-protocolos?status=resolvido')} />
+        <DashboardCard label="Protocolos abertos" value={count(['novo'])} hint="Aguardando triagem" tone="blue" icon={<Inbox className="h-4 w-4" />} onClick={() => navigate(`${listPath}?status=novo`)} />
+        <DashboardCard label="Em atendimento" value={count(['em_atendimento'])} hint="Com a equipe SAC" tone="accent" icon={<UserCheck className="h-4 w-4" />} onClick={() => navigate(`${listPath}?status=em_atendimento`)} />
+        <DashboardCard label="Aguardando cliente" value={count(['aguardando_cliente', 'aguardando_terceiro'])} hint="Inclui aguardando terceiro" tone="amber" icon={<Hourglass className="h-4 w-4" />} onClick={() => navigate(`${listPath}?status=aguardando_cliente`)} />
+        <DashboardCard label="Resolvidos" value={count(['resolvido', 'fechado'])} hint="Inclui fechados" tone="green" icon={<CheckCircle2 className="h-4 w-4" />} onClick={() => navigate(`${listPath}?status=resolvido`)} />
         <DashboardCard label="Tempo médio de atendimento" value={formatDuration(avgResponse)} hint={`1ª resposta em média: ${formatDuration(avgFirst)}`} tone="slate" icon={<Timer className="h-4 w-4" />} />
       </div>
 
@@ -57,17 +65,17 @@ export function DashboardPage() {
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
             <div>
-              <h2 className="font-semibold text-slate-900">Meus últimos protocolos</h2>
+              <h2 className="font-semibold text-slate-900">{portfolio ? 'Últimos protocolos da carteira' : 'Meus últimos protocolos'}</h2>
               <p className="text-xs text-slate-500">Clique em um protocolo para ver a tratativa completa</p>
             </div>
-            <Link to="/meus-protocolos" className="flex items-center gap-1 text-[13px] font-medium text-brand-600 hover:text-brand-700">
+            <Link to={listPath} className="flex items-center gap-1 text-[13px] font-medium text-brand-600 hover:text-brand-700">
               Ver todos <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
           {mine.length ? (
             <ProtocolTable protocols={mine.slice(0, 6)} columns={['protocol', 'title', 'category', 'status', 'responsible', 'createdAt', 'updatedAt']} />
           ) : (
-            <EmptyState icon={<Inbox className="h-6 w-6" />} title="Nenhum protocolo por aqui" description="Quando você abrir ou participar de um protocolo, ele aparecerá nesta lista." action={<Link to="/novo" className="btn-primary"><Plus className="h-4 w-4" />Abrir protocolo</Link>} />
+            <EmptyState icon={<Inbox className="h-6 w-6" />} title="Nenhum protocolo por aqui" description={portfolio ? 'Os protocolos abertos pelas equipes que você acompanha aparecerão nesta lista.' : 'Quando você abrir ou participar de um protocolo, ele aparecerá nesta lista.'} action={canOpen ? <Link to="/novo" className="btn-primary"><Plus className="h-4 w-4" />Abrir protocolo</Link> : undefined} />
           )}
         </section>
 

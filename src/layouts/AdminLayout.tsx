@@ -1,9 +1,13 @@
 import { Outlet } from 'react-router-dom'
-import { Settings, Tags, UserCog, Eye } from 'lucide-react'
+import { Settings, Tags, UserCog, Eye, Users, ListChecks, Package, Target } from 'lucide-react'
 import { Sidebar } from '../components/Sidebar'
 
 const ITEMS = [
   { to: '/admin/categorias', label: 'Categorias', icon: Tags },
+  { to: '/admin/equipes', label: 'Equipes', icon: Users },
+  { to: '/admin/listas', label: 'Listas de classificação', icon: ListChecks },
+  { to: '/admin/produtos', label: 'Produtos', icon: Package },
+  { to: '/admin/metas', label: 'Metas e produção', icon: Target },
   { to: '/admin/observadores', label: 'Observadores', icon: Eye },
   { to: '/admin/usuarios', label: 'Usuários', icon: UserCog },
   { to: '/admin/configuracoes', label: 'Configurações', icon: Settings },

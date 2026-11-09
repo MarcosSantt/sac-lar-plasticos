@@ -7,6 +7,6 @@ export const FAQ: FaqItem[] = [
   { topic: 'Observadores', q: 'O que são observadores?', a: 'Funcionam como pessoas em cópia (CC) de um e-mail. Eles acompanham o protocolo e também podem responder na conversa e enviar anexos.' },
   { topic: 'Observadores', q: 'Posso incluir um observador depois que o protocolo foi aberto?', a: 'Sim. Na tela do protocolo, clique em "+ Adicionar observador" no painel de Participantes.' },
   { topic: 'Anexos', q: 'Quais arquivos posso anexar?', a: 'PDFs, imagens (JPG, PNG), planilhas e documentos de texto, com até 10 MB por arquivo. Anexos podem ser enviados na abertura ou a qualquer momento na conversa.' },
-  { topic: 'Prazos', q: 'Qual é o prazo de resposta do SAC?', a: 'Nossa meta é realizar a primeira resposta em até 30 minutos em horário comercial. Cada mensagem da conversa mostra o tempo de resposta, e o painel do protocolo exibe o tempo total e o tempo médio de atendimento.' },
+  { topic: 'Prazos', q: 'Qual é o prazo de resposta do SAC?', a: 'Nossa meta é realizar a primeira resposta em até 48 horas. Cada mensagem da conversa mostra o tempo de resposta, e o painel do protocolo exibe o tempo total e o tempo médio de atendimento.' },
   { topic: 'Prazos', q: 'Como a prioridade é definida?', a: 'Baixa: sem impacto imediato. Média: impacto moderado. Alta: impacta a operação do cliente. Urgente: requer ação imediata, como cobranças indevidas ou riscos de segurança.' },
 ]

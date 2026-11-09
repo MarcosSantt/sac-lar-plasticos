@@ -4,9 +4,7 @@ import type { Persona, Protocol } from '../types'
 
 /** Protocolos em que a pessoa participa: como solicitante, responsável ou observador. */
 export function isParticipant(p: Protocol, persona: Persona) {
-  if (persona.role === 'requester') return p.requester.email.toLowerCase() === persona.email.toLowerCase()
-  if (persona.role === 'agent') return p.responsibleId === persona.id
-  return p.observerIds.includes(persona.id)
+  return p.requesterId === persona.id || p.responsibleId === persona.id || p.observerIds.includes(persona.id)
 }
 
 export function useMyProtocols() {

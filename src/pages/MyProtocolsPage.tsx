@@ -10,6 +10,7 @@ import { ProtocolFiltersBar } from '../components/ProtocolFiltersBar'
 import { ProtocolTable } from '../components/ProtocolTable'
 import { Pagination } from '../components/Pagination'
 import { EmptyState } from '../components/EmptyState'
+import { canOpenProtocol } from '../utils/access'
 
 const PAGE_SIZE = 8
 
@@ -27,7 +28,8 @@ export function MyProtocolsPage() {
   }, [params])
   useEffect(() => setPage(1), [filters])
 
-  const roleText = currentUser.role === 'agent' ? 'Protocolos atribuídos a você' : currentUser.role === 'observer' ? 'Protocolos em que você é observador' : 'Protocolos abertos por você'
+  const roleText = currentUser.role === 'agent' ? 'Protocolos atribuídos a você' : 'Protocolos que você abriu ou acompanha como observador'
+  const canOpen = canOpenProtocol(currentUser)
 
   return (
     <div className="animate-slide-up">
@@ -35,7 +37,7 @@ export function MyProtocolsPage() {
         crumbs={[{ label: 'Início', to: '/' }, { label: 'Meus Protocolos' }]}
         title="Meus Protocolos"
         description={`${roleText} · ${mine.length} no total`}
-        actions={<Link to="/novo" className="btn-success"><Plus className="h-4 w-4" /> Abrir novo protocolo</Link>}
+        actions={canOpen && <Link to="/novo" className="btn-success"><Plus className="h-4 w-4" /> Abrir novo protocolo</Link>}
       />
       <div className="card overflow-hidden">
         <ProtocolFiltersBar filters={filters} set={set} reset={reset} activeCount={activeCount} show={['status', 'categoryId', 'priority', 'period']} />
@@ -47,7 +49,7 @@ export function MyProtocolsPage() {
         ) : mine.length ? (
           <EmptyState icon={<SearchX className="h-6 w-6" />} title="Nenhum protocolo encontrado" description="Nenhum protocolo corresponde aos filtros aplicados." action={<button className="btn-secondary" onClick={reset}>Limpar filtros</button>} />
         ) : (
-          <EmptyState icon={<Inbox className="h-6 w-6" />} title="Você ainda não tem protocolos" description="Abra um novo protocolo para começar um atendimento." action={<Link to="/novo" className="btn-primary"><Plus className="h-4 w-4" />Abrir protocolo</Link>} />
+          <EmptyState icon={<Inbox className="h-6 w-6" />} title="Você ainda não tem protocolos" description={canOpen ? 'Abra um novo protocolo para começar um atendimento.' : 'Os protocolos atribuídos a você aparecerão aqui.'} action={canOpen ? <Link to="/novo" className="btn-primary"><Plus className="h-4 w-4" />Abrir protocolo</Link> : undefined} />
         )}
       </div>
     </div>

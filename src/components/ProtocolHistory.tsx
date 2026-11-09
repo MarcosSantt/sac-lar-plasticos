@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Eye, EyeOff, FilePlus2, MessageSquare, Paperclip, UserCheck } from 'lucide-react'
+import { ArrowRightLeft, ClipboardList, Eye, EyeOff, FilePlus2, MessageSquare, Package, Paperclip, UserCheck } from 'lucide-react'
 import type { HistoryKind, Protocol } from '../types'
 import { formatShortDateTime } from '../utils/format'
 
@@ -10,6 +10,8 @@ const ICONS: Record<HistoryKind, { icon: typeof Eye; cls: string }> = {
   message: { icon: MessageSquare, cls: 'bg-slate-100 text-slate-600' },
   status: { icon: ArrowRightLeft, cls: 'bg-amber-50 text-amber-600' },
   attachment: { icon: Paperclip, cls: 'bg-brand-50 text-brand-600' },
+  items: { icon: Package, cls: 'bg-blue-50 text-blue-600' },
+  details: { icon: ClipboardList, cls: 'bg-slate-100 text-slate-600' },
 }
 
 export function ProtocolHistory({ protocol }: { protocol: Protocol }) {

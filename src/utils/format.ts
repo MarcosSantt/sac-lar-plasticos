@@ -108,3 +108,17 @@ export function avatarColor(seed: string) {
 export function normalize(text: string) {
   return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
+
+const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+const BRL_COMPACT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 })
+
+export function formatMoney(value: number, compact = false) {
+  return (compact && Math.abs(value) >= 10_000 ? BRL_COMPACT : BRL).format(value)
+}
+
+/** Data AAAA-MM-DD (sem fuso) em dd/mm/aaaa. */
+export function formatDay(day: string | null | undefined) {
+  if (!day) return '—'
+  const [y, m, d] = day.split('-')
+  return `${d}/${m}/${y}`
+}

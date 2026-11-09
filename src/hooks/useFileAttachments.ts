@@ -1,44 +1,47 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Attachment } from '../types'
+import { useToast } from '../components/Toast'
 import { uid } from '../utils/format'
 
-const MAX_PREVIEW_BYTES = 350 * 1024
+export const MAX_FILE_MB = 10
+export const MAX_FILES = 10
 
-function readPreview(file: File): Promise<string | undefined> {
-  if (!file.type.startsWith('image/') || file.size > MAX_PREVIEW_BYTES) return Promise.resolve(undefined)
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => resolve(undefined)
-    reader.readAsDataURL(file)
-  })
-}
+/** Arquivo selecionado que ainda não foi enviado ao servidor. */
+interface PendingFile { attachment: Attachment; file: File }
 
-/** Converte arquivos selecionados em anexos simulados (sem upload real). */
-export async function filesToAttachments(files: FileList | File[], uploadedBy: string): Promise<Attachment[]> {
-  const now = new Date().toISOString()
-  return Promise.all(Array.from(files).map(async (f) => ({
-    id: uid('a'),
-    name: f.name,
-    type: f.type || 'application/octet-stream',
-    size: f.size,
-    uploadedBy,
-    createdAt: now,
-    dataUrl: await readPreview(f),
-  })))
-}
-
+/** Arquivos escolhidos em um formulário, enviados junto com ele. */
 export function useFileAttachments(uploadedBy: string) {
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [pending, setPending] = useState<PendingFile[]>([])
+  const toast = useToast()
+  const previews = useRef(new Set<string>())
 
-  const addFiles = useCallback(async (files: FileList | File[] | null) => {
+  // Libera as pré-visualizações ao sair da tela.
+  useEffect(() => {
+    const urls = previews.current
+    return () => urls.forEach((u) => URL.revokeObjectURL(u))
+  }, [])
+
+  const addFiles = useCallback((files: FileList | File[] | null) => {
     if (!files || !files.length) return
-    const list = await filesToAttachments(files, uploadedBy)
-    setAttachments((cur) => [...cur, ...list.filter((a) => !cur.some((c) => c.name === a.name && c.size === a.size))])
-  }, [uploadedBy])
+    const now = new Date().toISOString()
+    const tooBig = Array.from(files).filter((f) => f.size > MAX_FILE_MB * 1024 * 1024)
+    if (tooBig.length) {
+      toast({ variant: 'error', title: 'Arquivo muito grande', description: `${tooBig.map((f) => f.name).join(', ')} ultrapassa o limite de ${MAX_FILE_MB} MB.` })
+    }
+    const accepted = Array.from(files).filter((f) => !tooBig.includes(f)).map((file) => {
+      const url = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      if (url) previews.current.add(url)
+      return { file, attachment: { id: uid('a'), name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploadedBy, createdAt: now, url } }
+    })
+    setPending((cur) => {
+      const merged = [...cur, ...accepted.filter((a) => !cur.some((c) => c.file.name === a.file.name && c.file.size === a.file.size))]
+      if (merged.length > MAX_FILES) toast({ variant: 'error', title: 'Muitos arquivos', description: `Envie no máximo ${MAX_FILES} arquivos por vez.` })
+      return merged.slice(0, MAX_FILES)
+    })
+  }, [uploadedBy, toast])
 
-  const remove = useCallback((id: string) => setAttachments((cur) => cur.filter((a) => a.id !== id)), [])
-  const clear = useCallback(() => setAttachments([]), [])
+  const remove = useCallback((id: string) => setPending((cur) => cur.filter((p) => p.attachment.id !== id)), [])
+  const clear = useCallback(() => setPending([]), [])
 
-  return { attachments, addFiles, remove, clear }
+  return { attachments: pending.map((p) => p.attachment), files: pending.map((p) => p.file), addFiles, remove, clear }
 }

@@ -7,6 +7,8 @@ const ROLE_BADGE = {
   Solicitante: 'bg-slate-100 text-slate-600',
   'Atendente SAC': 'bg-brand-100 text-brand-700',
   Observador: 'bg-violet-100 text-violet-700',
+  Coordenação: 'bg-amber-100 text-amber-800',
+  'Pós-vendas': 'bg-blue-100 text-blue-700',
 }
 
 interface ParticipantListProps {
